@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent Studio · 管理后台</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#chat"><span class="brand-icon">a<span>✦</span></span><span>Agent Studio<small>个人工作空间</small></span></a>
+    <div class="nav-label">工作空间</div>
+    <nav aria-label="主导航">
+      <button data-page="chat"><span>◈</span> 对话工作台</button>
+      <button data-page="prompt"><span>≡</span> 系统提示词</button>
+      <button data-page="models"><span>◇</span> 模型配置</button>
+      <button data-page="sessions"><span>◷</span> 会话记录</button>
+    </nav>
+    <div class="sidebar-note"><span class="status-dot"></span> 页面预览模式<p>配置保存在当前浏览器<br>尚未连接 Agent 服务</p></div>
+    <div class="profile"><span class="avatar">A</span><div>我的工作空间<small>本地 · Personal</small></div><span class="profile-more">···</span></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>工作空间 <span class="separator">/</span> <strong id="breadcrumb">对话工作台</strong></span><span class="preview-tag">仅前端预览</span></header>
+    <div class="content">
+      <section id="page-chat" class="page">
+        <div class="page-heading"><div><div class="eyebrow">PLAYGROUND</div><h1>对话工作台</h1><p>让想法开始对话，探索你的 Agent。</p></div><button id="new-chat" class="button">＋ 新建会话</button></div>
+        <div class="workspace">
+          <div class="chat-panel">
+            <div class="chat-toolbar"><span><span class="status-dot"></span> <strong id="chat-title">新的对话</strong></span><span class="subtle">本地草稿</span></div>
+            <div id="messages" class="messages" aria-live="polite"></div>
+            <form id="chat-form" class="composer"><textarea id="chat-input" rows="3" placeholder="写下你的问题或任务…" aria-label="消息内容" required></textarea><div class="composer-footer"><span>Enter 发送 · Shift + Enter 换行</span><button class="send-button" aria-label="发送消息">↑</button></div></form>
+            <div class="chat-footnote">预览模式仅记录消息，不会请求模型或执行工具。</div>
+          </div>
+          <aside class="config-panel"><div class="panel-heading">本轮配置 <span>⚙</span></div><label for="chat-model">使用模型</label><select id="chat-model"></select><div class="field-note">模型配置仅用于界面展示</div><div class="panel-divider"></div><div class="label-row"><label>系统提示词</label><button class="text-button" data-open="prompt">编辑 ↗</button></div><div id="prompt-preview" class="prompt-preview"></div><div class="panel-divider"></div><label>工具扩展</label><div class="tool-placeholder"><span>＋</span> 预留本地工具入口</div><p class="field-note">工具由 Agent 服务提供。<br>本页面暂不执行任何工具。</p><div class="config-tip">✦<p>先调整提示词与模型配置，再开始一段新的对话。</p></div></aside>
+        </div>
+      </section>
+      <section id="page-prompt" class="page" hidden>
+        <div class="page-heading"><div><div class="eyebrow">INSTRUCTIONS</div><h1>系统提示词</h1><p>定义助手的角色、行为和工具使用方式。</p></div><button id="save-prompt" class="button primary">保存提示词</button></div>
+        <div class="editor-layout"><div class="card"><div class="card-heading">System instructions <span id="prompt-count" class="subtle"></span></div><textarea id="prompt-editor" class="prompt-editor" spellcheck="false" aria-label="系统提示词内容"></textarea><div class="editor-bottom"><span>只保存到浏览器，不修改 main.ts</span><button id="reset-prompt" class="text-button">恢复默认</button></div></div><div class="tips"><h3>好的提示词，从清晰开始</h3><div><span>01</span><h4>确定角色</h4><p>说明助手是谁、要帮助用户完成什么。</p></div><div><span>02</span><h4>划定能力边界</h4><p>区分直接回答和需要工具执行的任务。</p></div><div><span>03</span><h4>约定输出方式</h4><p>明确工具调用格式与失败处理方式。</p></div></div></div>
+      </section>
+      <section id="page-models" class="page" hidden>
+        <div class="page-heading"><div><div class="eyebrow">CONNECTIONS</div><h1>模型配置</h1><p>集中管理你的模型，按任务自由选择。</p></div><button id="add-model" class="button primary">＋ 添加模型</button></div>
+        <div class="notice">ⓘ <span>这些是浏览器中的展示配置，不会修改 .env 或发起连接。API Key 仅在本次页面打开期间保留。</span></div><div id="model-grid" class="model-grid"></div>
+      </section>
+      <section id="page-sessions" class="page" hidden>
+        <div class="page-heading"><div><div class="eyebrow">HISTORY</div><h1>会话记录</h1><p>把每一次思考，留在你的工作空间。</p></div><button id="session-new" class="button">＋ 新建会话</button></div>
+        <div class="card"><div class="table-toolbar"><strong>全部会话 <span id="session-count" class="count"></span></strong><input id="session-search" type="search" placeholder="搜索会话…" aria-label="搜索会话"></div><div class="table-scroll"><table><thead><tr><th>会话名称</th><th>消息数</th><th>最近更新</th><th>操作</th></tr></thead><tbody id="session-list"></tbody></table></div></div>
+      </section>
+      <footer class="page-footer">AGENT STUDIO <span>专注你的想法，配置你的助手。</span></footer>
+    </div>
+  </main>
+  <dialog id="model-dialog"><form id="model-form"><div class="dialog-heading"><h2 id="dialog-title">添加模型</h2><button type="button" id="close-dialog" class="icon-button" aria-label="关闭">×</button></div><label>显示名称<input name="name" required placeholder="例如：本地 Qwen"></label><label>请求地址<input name="url" type="url" required placeholder="http://localhost:11434/v1/chat/completions"></label><label>模型名称<input name="model" required placeholder="模型的完整名称"></label><label>API Key <span class="subtle">可选，仅保留在内存</span><input name="key" type="password" autocomplete="off" placeholder="不需要时留空"></label><div class="dialog-footer"><button type="button" id="cancel-dialog" class="button">取消</button><button class="button primary">保存配置</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
