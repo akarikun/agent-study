@@ -1,7 +1,15 @@
-# Agent Studio 页面
+# Agent Studio
 
-独立静态前端，直接用浏览器打开 `index.html`。也可以在项目根目录运行 `python3 -m http.server 8080 --bind 127.0.0.1 --directory admin`，访问 `http://localhost:8080/`。
+在项目根目录运行 `npm run dev`，打开 `http://127.0.0.1:3000`。需要 Node.js 24+ 和可用的模型服务。不要直接双击 HTML 或使用静态服务器，页面需要同源 Node 接口。
 
-包含对话草稿、系统提示词编辑、模型配置、会话列表与搜索。配置仅保存到浏览器 localStorage，API Key 只留在页面内存，刷新即清除。
+- 对话：发送消息后流式显示回答，工具执行状态通过提示显示；完整回答后保存到 `.data/chat.sqlite`，刷新后恢复。
+- 助手回复支持 Markdown（列表、粗体、代码块、表格等），用户消息保持纯文本。发送后显示等待动画，工具执行时显示状态，收到回复或失败后结束等待。依赖通过本地服务加载，新环境先执行 `npm install`。
+- 提示词：保存在当前浏览器，每轮发送给 Agent，服务端自动追加工具规则。
+- 模型：首次加载 `.env`（没有时使用 `.env.example`）；网页修改后保存到 `.data/models.json`，重启和终端入口都会使用该文件。修改已有模型时 Key 留空保留原值。
+- 会话：支持新建、搜索、打开和删除；历史由 SQLite 管理。
 
-没有连接 Agent，没有网络模型请求，不读写 `.env` 或 SQLite。后续可把 `app.js` 的保存和发送操作替换为后台接口调用。
+API Key 只保存在服务端本机配置文件，不返回浏览器。服务只监听 `127.0.0.1`；当前 `read_file` 工具具有运行进程的文件读取权限。
+
+接口包括 `POST /api/chat`（SSE：delta/tool/done/error）、`GET/POST /api/models`、`DELETE /api/models/:id`、`GET /api/sessions`、`GET/DELETE /api/sessions/:id`。
+
+`npm run check` 检查语法，`npm test` 运行 SQLite 与模拟模型 HTTP 集成测试，不需要真实模型或 Key。

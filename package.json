@@ -4,12 +4,25 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "main": "node --env-file=.env main.ts",
-    "dev": "node --env-file=.env main.ts",
-    "check": "node --check main.ts && node --check tools.ts && node --check sqlite.ts && node --check sqlite.test.ts",
-    "test": "node --test sqlite.test.ts"
+    "main": "node src/main.ts",
+    "dev": "node src/main.ts",
+    "cli": "node src/main.ts --cli",
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.ts",
+    "start": "node src/main.ts",
+    "format": "prettier --write src admin tests scripts package.json .prettierrc.json",
+    "format:check": "prettier --check src admin tests scripts package.json .prettierrc.json"
   },
   "engines": {
-    "node": ">=24"
+    "node": "\u003e=24"
+  },
+  "dependencies": {
+    "dompurify": "^3.4.17",
+    "fast-xml-parser": "^5.11.2",
+    "marked": "^18.1.1"
+  },
+  "devDependencies": {
+    "jsdom": "^30.1.2",
+    "prettier": "^3.9.10"
   }
 }

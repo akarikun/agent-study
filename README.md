@@ -8,7 +8,7 @@
 npm install
 # 没有 .env 时才复制，已有配置不要覆盖
 cp .env.example .env
-npm run main
+npm start
 ```
 
 `.env` 使用 `MODELS` JSON 数组配置多个模型，每项含 `url`（完整请求地址）、`model` 和 `key`（不需要时留空）。`MODEL_INDEX` 指定启动时使用的数组序号，默认 0；`CHAT_SESSION_ID` 指定会话。默认配置连接本机 Ollama，指定模型需已下载。
@@ -20,12 +20,38 @@ npm run main
 
 ## 文件与流程
 
+```text
+src/
+  main.ts           统一启动入口，默认后台，--cli 启动终端
+  cli.ts            终端交互
+  server.ts         HTTP 服务实现
+  agent/            Agent 循环、模型响应流、提示词、XML 解析
+  config/           模型配置与项目路径
+  http/             SSE 聊天、请求响应、静态资源
+  storage/          SQLite 持久化
+  tools/            本地工具注册与实现
+admin/              管理页面及静态资源
+tests/              后端与页面测试
+docs/               开发记录
+```
+
+后续开发安排见 [开发记录](docs/DEVELOPMENT_PLAN.md)。`.env` 和 `.data/` 仍位于项目根目录，启动命令不变。
+
 | 文件 | 职责 |
 | --- | --- |
-| `main.ts` | 终端交互、系统提示、流式请求和工具调用循环 |
-| `tools.ts` | 本地工具定义与实现，目前提供 `read_file` |
-| `sqlite.ts` | 会话读取、保存、清空和关闭数据库 |
-| `sqlite.test.ts` | 验证会话持久化、覆盖更新、隔离与清空 |
+| `src/main.ts` | 统一启动入口，默认网页服务，--cli 切换终端 |
+| `src/cli.ts` | 终端交互、斜杠命令 |
+| `src/agent/agent.ts` | 网页和终端共用的工具调用循环 |
+| `src/agent/prompt.ts` | 默认提示词和工具协议说明 |
+| `src/agent/model-stream.ts` | 模型 HTTP 请求和 SSE 读取 |
+| `src/agent/tool-call.ts` | XML 工具调用解析 |
+| `src/server.ts` | 本地 HTTP 服务、流式聊天、模型与会话接口 |
+| `src/config/models.ts` | 加载环境变量和本地模型配置 |
+| `src/tools/index.ts` | 统一注册 read_file、write_file、edit_file |
+| `src/tools/*-file.ts` | 各文件工具的独立实现 |
+| `src/tools/syntax-check.ts` | JavaScript 语法检查与结果反馈 |
+| `src/storage/sqlite.ts` | 会话读取、保存、清空和关闭数据库 |
+| `tests/sqlite.test.ts` | 验证会话持久化、覆盖更新、隔离与清空 |
 
 ```text
 用户输入 → 模型回答
@@ -35,7 +61,7 @@ npm run main
           保存到 SQLite
 ```
 
-在 `tools.ts` 添加工具的名称、参数说明和 `execute`，系统提示中的工具清单会自动更新。使用自定义 JSON 调用格式：`{"tool":"工具名称","params":{...}}`。
+新增工具时，在 `src/tools/` 创建独立文件实现 `Tool`（description、readOnly、execute），然后在 `index.ts` 注册，系统提示和页面工具清单会自动更新。模型使用自定义 XML `<tool_call name="工具名称"><params>...</params></tool_call>` 调用，文件正文放在 CDATA 中。
 
 会话保存在 `.data/chat.sqlite`，启动时自动恢复，完整回答后保存。系统提示每次请求单独注入，不写入历史。不同 `CHAT_SESSION_ID` 使用不同会话。
 
@@ -44,10 +70,15 @@ npm run main
 ```sh
 npm run check
 npm test
+npm run format:check
 ```
 
-当前保留最小执行流程；上下文截断、循环次数限制可在此基础上扩展。
+`npm run format` 可统一展开和格式化源码、页面及测试，规则位于 `.prettierrc.json`。语法检查会自动扫描源码和测试目录，新增模块无需再手动添加检查命令。
 
 ## 独立管理页面
 
-`admin/index.html` 提供对话草稿、提示词编辑、模型配置与会话管理的纯前端页面，未接入 Agent。操作说明见 `admin/README.md`。
+运行 `npm start`，打开 `http://127.0.0.1:3000`。支持流式聊天、提示词编辑、模型配置和 SQLite 会话管理。`npm run dev` 和 `npm run main` 同样启动后台；终端对话使用 `npm run cli`。所有启动命令统一经过 `src/main.ts`，也可直接运行 `node src/main.ts` 或 `node src/main.ts --cli`。
+
+没有 `.env` 时自动使用 `.env.example` 中的本地 Ollama 配置。网页保存模型配置后，网页与终端优先使用 `.data/models.json`，不修改 `.env`。删除该配置文件后可重新使用环境变量配置。API Key 保存在该本机文件中，不会返回浏览器，请勿分享 `.data` 目录。
+
+服务只监听本机，`PORT` 可修改端口。聊天请求最多执行 8 次模型循环（`src/agent/agent.ts`），15 分钟超时（`src/http/chat.ts`）；失败或断开连接的轮次不保存。同一会话生成期间拒绝重复请求和删除。工具调用和工具结果保留在模型上下文，页面仅展示用户消息与最终回答。操作说明见 `admin/README.md`。
