@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { projectPath } from '../config/paths.ts';
+import { builtinPrompts } from '../agent/prompt.ts';
 
 // internal 消息保留给模型上下文，但不作为聊天气泡展示。
 export type Message = { id?: string; role: string; content: string; internal?: boolean };
@@ -11,6 +12,25 @@ export type Message = { id?: string; role: string; content: string; internal?: b
 export function openChatStore(path = fileURLToPath(projectPath('.data/chat.sqlite'))) {
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
     const db = new DatabaseSync(path);
+    db.exec(`CREATE TABLE IF NOT EXISTS prompts (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, content TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);`);
+    const seedPrompt = db.prepare(
+        'INSERT OR IGNORE INTO prompts (id, name, content) VALUES (?, ?, ?)',
+    );
+    for (const prompt of builtinPrompts) seedPrompt.run(prompt.id, prompt.name, prompt.content);
+    db.prepare(
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('active_prompt', 'tools')",
+    ).run();
+    const getPrompt = (id: string) =>
+        db.prepare('SELECT id, name, content FROM prompts WHERE id = ?').get(id) as
+            { id: string; name: string; content: string } | undefined;
+    const promptConfig = () => ({
+        activeId: db.prepare("SELECT value FROM settings WHERE key = 'active_prompt'").get()!
+            .value as string,
+        prompts: db.prepare('SELECT id, name, content FROM prompts ORDER BY rowid').all(),
+    });
     db.exec(`CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         messages TEXT NOT NULL
@@ -57,6 +77,34 @@ export function openChatStore(path = fileURLToPath(projectPath('.data/chat.sqlit
     };
 
     return {
+        promptConfig,
+        activePrompt() {
+            return getPrompt(promptConfig().activeId)!;
+        },
+        selectPrompt(id: string) {
+            if (typeof id !== 'string' || !getPrompt(id)) throw new Error('提示词配置不存在');
+            db.prepare("UPDATE settings SET value = ? WHERE key = 'active_prompt'").run(id);
+            return promptConfig();
+        },
+        savePrompt(data: { id?: string; name: string; content: string }) {
+            if (
+                typeof data.name !== 'string' ||
+                !data.name.trim() ||
+                data.name.length > 100 ||
+                typeof data.content !== 'string' ||
+                !data.content.trim() ||
+                data.content.length > 100_000
+            )
+                throw new Error('提示词名称或内容无效');
+            if (data.id !== undefined && (typeof data.id !== 'string' || !getPrompt(data.id)))
+                throw new Error('提示词配置不存在');
+            const id = data.id ?? crypto.randomUUID();
+            db.prepare(
+                `INSERT INTO prompts (id, name, content) VALUES (?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET name = excluded.name, content = excluded.content`,
+            ).run(id, data.name.trim(), data.content.trim());
+            return this.selectPrompt(id);
+        },
         list() {
             // 面向页面的列表过滤工具中间消息；load() 则返回完整上下文。
             return db

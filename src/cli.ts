@@ -16,6 +16,23 @@ export async function startCLI() {
             const text = await cli.question('> ');
             // 斜杠命令由本地处理，不作为用户消息发送给模型。
             if (text === '/exit') return;
+            if (text === '/prompts') {
+                const config = store.promptConfig();
+                for (const prompt of config.prompts)
+                    console.log(
+                        `${prompt.id === config.activeId ? '*' : ' '} ${prompt.id}: ${prompt.name}`,
+                    );
+                continue;
+            }
+            if (text.startsWith('/prompt ')) {
+                try {
+                    store.selectPrompt(text.slice(8).trim());
+                    console.log(`已切换：${store.activePrompt().name}，下一轮生效。`);
+                } catch (error) {
+                    console.error(error instanceof Error ? error.message : String(error));
+                }
+                continue;
+            }
             if (text === '/models') {
                 models.forEach((model, i) =>
                     console.log(`${selected === i ? '*' : ' '} ${i}: ${model.model}`),
@@ -44,7 +61,10 @@ export async function startCLI() {
                     text,
                 })) {
                     if (event.type === 'delta') process.stdout.write(event.text);
-                    else console.log(`\n[工具 ${event.name}: ${event.status}]`);
+                    else
+                        console.log(
+                            `\n[工具 ${event.name}: ${event.status}${event.error ? `：${event.error}` : ''}]`,
+                        );
                 }
                 console.log();
             } catch (error) {

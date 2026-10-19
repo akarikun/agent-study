@@ -17,11 +17,12 @@
         <button data-page="chat"><span>◈</span> 对话工作台</button>
         <button data-page="prompt"><span>≡</span> 系统提示词</button>
         <button data-page="models"><span>◇</span> 模型配置</button>
+        <button data-page="tools"><span>⚒</span> 工具扩展</button>
         <button data-page="sessions"><span>◷</span> 会话记录</button>
       </nav>
       <div class="sidebar-note">
-        <span class="status-dot"></span> 本地 Agent 服务
-        <p>模型配置保存在本机<br />会话保存到 SQLite</p>
+        <span class="status-dot"></span> <span id="local-service-label">本地 Agent 服务</span>
+        <p id="sidebar-storage-note">模型配置保存在本机<br />会话保存到 SQLite</p>
       </div>
       <div class="profile">
         <span class="avatar">A</span>
@@ -37,6 +38,18 @@
         ><span class="preview-tag">正在连接 Agent</span>
       </header>
       <div class="content">
+        <div id="runtime-controls" class="runtime-controls" hidden>
+          <label for="runtime-mode">运行方式</label>
+          <select id="runtime-mode">
+            <option value="demo">演示模式 · 模拟回复</option>
+            <option value="direct">浏览器直连 · 使用自己的模型</option>
+          </select>
+          <span id="runtime-note"></span>
+          <div id="runtime-target" class="runtime-target" hidden>
+            <strong id="runtime-target-model"></strong>
+            <code id="runtime-target-url"></code>
+          </div>
+        </div>
         <section id="page-chat" class="page">
           <div class="page-heading">
             <div>
@@ -51,9 +64,16 @@
               <div class="chat-toolbar">
                 <span
                   ><span class="status-dot"></span> <strong id="chat-title">新的对话</strong></span
-                ><span class="subtle">SQLite 会话</span>
+                ><span id="chat-storage-label" class="subtle">SQLite 会话</span>
               </div>
               <div id="messages" class="messages" aria-live="polite"></div>
+              <div
+                id="tool-errors"
+                class="tool-errors"
+                role="log"
+                aria-label="本次工具错误"
+                hidden
+              ></div>
               <form id="chat-form" class="composer">
                 <textarea
                   id="chat-input"
@@ -67,7 +87,10 @@
                   <div class="composer-actions">
                     <button id="clear-context" type="button" class="clear-context">
                       清空上下文</button
-                    ><button class="send-button" aria-label="发送消息">↑</button>
+                    ><button id="stop-generation" type="button" class="stop-button" hidden>
+                      ■ 停止
+                    </button>
+                    <button class="send-button" aria-label="发送消息">↑</button>
                   </div>
                 </div>
               </form>
@@ -75,24 +98,49 @@
             </div>
             <aside class="config-panel">
               <div class="panel-heading">本轮配置 <span>⚙</span></div>
+              <label class="routing-toggle" for="auto-route">
+                自动路由
+                <input
+                  id="auto-route"
+                  type="checkbox"
+                  role="switch"
+                  aria-describedby="routing-note"
+                />
+              </label>
+              <p id="routing-note" class="field-note"></p>
               <label for="chat-model">使用模型</label
               ><select id="chat-model"></select>
-              <div class="field-note">本轮请求使用所选模型</div>
+              <div id="route-result" class="field-note" role="status"></div>
               <div class="panel-divider"></div>
               <div class="label-row">
                 <label>系统提示词</label
                 ><button class="text-button" data-open="prompt">编辑 ↗</button>
               </div>
               <div id="prompt-preview" class="prompt-preview"></div>
-              <div class="panel-divider"></div>
-              <label>工具扩展</label>
-              <div id="tool-list" class="tool-list" aria-live="polite">正在加载工具…</div>
-              <p class="field-note">工具由 Agent 服务提供。<br />执行状态会在对话时显示。</p>
+              <label for="chat-prompt">助手角色</label>
+              <select id="chat-prompt" disabled></select>
+              <p id="prompt-selection-note" class="field-note">
+                选择保存在 SQLite 中的助手，下一轮生效。不同任务建议新建对话。
+              </p>
               <div class="config-tip">
                 ✦
                 <p>先调整提示词与模型配置，再开始一段新的对话。</p>
               </div>
             </aside>
+          </div>
+        </section>
+        <section id="page-tools" class="page" hidden>
+          <div class="page-heading">
+            <div>
+              <div class="eyebrow">TOOLS</div>
+              <h1>工具扩展</h1>
+              <p>查看 Agent 可调用的工具及参数说明。</p>
+            </div>
+          </div>
+          <div class="card tools-page-card">
+            <div class="card-heading">已注册工具</div>
+            <div id="tool-list" class="tool-list" aria-live="polite">正在加载工具…</div>
+            <p class="field-note">工具由 Agent 服务提供。执行状态会在对话时显示。</p>
           </div>
         </section>
         <section id="page-prompt" class="page" hidden>
@@ -109,6 +157,13 @@
               <div class="card-heading">
                 System instructions <span id="prompt-count" class="subtle"></span>
               </div>
+              <div class="prompt-profile-bar">
+                <label>当前助手<select id="prompt-profile" disabled></select></label>
+                <label
+                  >助手名称<input id="prompt-name" maxlength="100" placeholder="助手名称"
+                /></label>
+                <button id="new-prompt" class="button" disabled>另存为新助手</button>
+              </div>
               <textarea
                 id="prompt-editor"
                 class="prompt-editor"
@@ -116,8 +171,9 @@
                 aria-label="系统提示词内容"
               ></textarea>
               <div class="editor-bottom">
-                <span>保存到浏览器，下次发送时生效</span
-                ><button id="reset-prompt" class="text-button">恢复默认</button>
+                <span id="prompt-storage-note">保存到 SQLite，页面与 CLI 共用</span>
+                <button id="import-prompt" class="text-button">导入旧浏览器提示词</button>
+                <button id="reset-prompt" class="text-button">恢复已保存</button>
               </div>
             </div>
             <div class="tips">
@@ -151,10 +207,33 @@
           </div>
           <div class="notice">
             ⓘ
-            <span
+            <span id="model-storage-note"
               >模型与 API Key 保存在本机 .data/models.json，不修改 .env；密钥不会返回浏览器。</span
             >
           </div>
+          <details id="connection-help" class="card connection-help" hidden>
+            <summary>如何连接自己的模型？</summary>
+            <p>
+              Ollama：填写 http://localhost:11434/v1/chat/completions
+              和本机已安装的模型名称，通常无需 Key。
+            </p>
+            <p>
+              公共平台：填写支持 Chat Completions 的完整 HTTPS 接口地址、模型名称和 API Key；ChatGPT
+              网页订阅不是 API Key。当前版本使用 XML 工具协议，不使用原生 tool_calls。
+            </p>
+            <p>
+              浏览器直连要求接口允许跨域（CORS）。本地网络访问还可能需要浏览器授权；HTTPS 页面访问
+              HTTP 也可能受限制。连接失败不会自动转为模拟回复。
+            </p>
+            <p>
+              Ollama 需通过 OLLAMA_ORIGINS 允许本站 Origin，并重启服务。只允许你信任的站点，不需要把
+              Ollama 暴露到公网。若浏览器限制直连，可下载项目在本机运行原有 Node 模式。
+            </p>
+            <p>
+              浏览器版文件工具只操作虚拟文件。工具调用结果会发给当前模型；真实天气请求发往
+              Open-Meteo。
+            </p>
+          </details>
           <div id="model-grid" class="model-grid"></div>
         </section>
         <section id="page-sessions" class="page" hidden>
@@ -209,7 +288,7 @@
             placeholder="http://localhost:11434/v1/chat/completions" /></label
         ><label>模型名称<input name="model" required placeholder="模型的完整名称" /></label
         ><label
-          >API Key <span class="subtle">可选，保存在本机服务端</span
+          >API Key <span id="key-storage-note" class="subtle">可选，保存在本机服务端</span
           ><input name="key" type="password" autocomplete="off" placeholder="不需要时留空"
         /></label>
         <div class="dialog-footer">
@@ -222,6 +301,8 @@
     <script src="vendor/marked.js"></script>
     <script src="vendor/purify.js"></script>
     <script src="chat-render.js"></script>
+    <script src="runtime-config.js"></script>
+    <script src="browser-runtime.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

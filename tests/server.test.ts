@@ -12,11 +12,35 @@ import { openChatStore } from '../src/storage/sqlite.ts';
 test('后台流式对话、工具循环、会话持久化、模型密钥与错误处理', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'agent-api-'));
     const requests: any[] = [];
+    let markCancelled: () => void;
+    const modelCancelled = new Promise<void>((resolve) => {
+        markCancelled = resolve;
+    });
     const mock = createServer(async (req, res) => {
         let body = '';
         for await (const chunk of req) body += chunk;
         const data = JSON.parse(body);
         requests.push(data);
+        if (data.messages.at(-1).content === 'wait-cancel') {
+            res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+            res.write(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: '部分输出' } }] })}\n\n`,
+            );
+            res.once('close', () => markCancelled());
+            return;
+        }
+        if (data.messages.at(-1).content === 'missing-file') {
+            res.end(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: '<tool_call name="read_file"><params><path>__missing_agent_test_file__.txt</path></params></tool_call>' } }] })}\n\ndata: [DONE]\n\n`,
+            );
+            return;
+        }
+        if (data.messages.at(-1).content === 'broken-stream') {
+            res.end(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: '部分回答' } }] })}\n\ndata: invalid-json\n\n`,
+            );
+            return;
+        }
         if (data.messages.some((message: any) => message.content === 'fail')) {
             res.writeHead(500);
             res.end();
@@ -80,6 +104,26 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
             403,
         );
         assert.equal((await fetch(base + '/api/models')).status, 200);
+        const presets = await (await fetch(base + '/api/prompts')).json();
+        assert.equal(presets.activeId, 'tools');
+        assert.equal((await post('/api/prompts/active', { id: 'library' })).status, 200);
+        await (
+            await post('/api/chat', {
+                sessionId: 'prompt-check',
+                text: '你好',
+                modelId: 'local',
+            })
+        ).text();
+        assert.match(requests.at(-1).messages[0].content, /图书管理助手/);
+        requests.length = 0;
+        await fetch(base + '/api/sessions/prompt-check', { method: 'DELETE' });
+        const savedPrompt = await (
+            await post('/api/prompts', { name: '新助手', content: '新规则' })
+        ).json();
+        assert.ok(savedPrompt.prompts.some((p: any) => p.content === '新规则'));
+        assert.equal((await post('/api/prompts/active', { id: 'missing' })).status, 400);
+        assert.equal((await post('/api/prompts', { name: '', content: '' })).status, 400);
+        await post('/api/prompts/active', { id: 'tools' });
         assert.equal(
             (await (await fetch(base + '/api/models')).text()).includes('test-secret'),
             false,
@@ -148,7 +192,57 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
         });
         assert.match(await error.text(), /"type":"error"/);
         assert.deepEqual(await (await fetch(base + '/api/sessions/failed')).json(), []);
+        for (const text of ['missing-file', 'broken-stream']) {
+            const before = requests.length;
+            const result = await (
+                await post('/api/chat', {
+                    sessionId: text,
+                    text,
+                    modelId: 'local',
+                })
+            ).text();
+            assert.doesNotMatch(result, /"status":"done"/);
+            if (text === 'missing-file') {
+                assert.match(result, /"status":"error"/);
+                assert.match(result, /ENOENT/);
+                assert.match(result, /"type":"done"/);
+                assert.doesNotMatch(result, /"type":"error"/);
+                assert.equal(requests.length, before + 2, '工具失败交回模型继续处理');
+                assert.match(requests.at(-1).messages.at(-1).content, /ENOENT/);
+                assert.ok((await (await fetch(base + '/api/sessions/' + text)).json()).length);
+                await fetch(base + '/api/sessions/' + text, { method: 'DELETE' });
+            } else {
+                assert.match(result, /"type":"error"/);
+                assert.doesNotMatch(result, /"type":"done"/);
+                assert.equal(requests.length, before + 1);
+                assert.deepEqual(await (await fetch(base + '/api/sessions/' + text)).json(), []);
+            }
+        }
         assert.equal((await post('/api/chat', { text: 'hi' })).status, 400);
+        const cancellation = new AbortController();
+        const pending = await fetch(base + '/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: 'cancelled', text: 'wait-cancel', modelId: 'local' }),
+            signal: cancellation.signal,
+        });
+        const pendingReader = pending.body!.getReader();
+        let received = '';
+        while (!received.includes('部分输出')) {
+            const chunk = await pendingReader.read();
+            assert.equal(chunk.done, false);
+            received += new TextDecoder().decode(chunk.value);
+        }
+        cancellation.abort();
+        await Promise.race([
+            modelCancelled,
+            new Promise((_, reject) => {
+                const timeout = setTimeout(() => reject(new Error('取消未传递给模型')), 3000);
+                timeout.unref();
+            }),
+        ]);
+        pendingReader.releaseLock();
+        assert.deepEqual(await (await fetch(base + '/api/sessions/cancelled')).json(), []);
         const models = await (
             await post('/api/models', {
                 id: 'local',
@@ -161,6 +255,43 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
         assert.equal(JSON.stringify(models).includes('test-secret'), false);
         assert.equal((await fetch(base + '/api/sessions/one', { method: 'DELETE' })).status, 200);
         assert.deepEqual(await (await fetch(base + '/api/sessions')).json(), []);
+        const configured = await (
+            await post('/api/models', {
+                name: '本地 9B',
+                model: 'local-qwen-9b:q4',
+                url: model.url,
+            })
+        ).json();
+        const large = configured.find((item: any) => item.name === '本地 9B');
+        const routed = await (
+            await post('/api/chat', {
+                sessionId: 'auto',
+                text: '实现算法',
+                autoRoute: true,
+            })
+        ).text();
+        assert.match(routed, /"type":"route"/);
+        assert.ok(routed.includes(large.id));
+        assert.equal(requests.at(-1).model, 'local-qwen-9b:q4');
+        await (
+            await post('/api/chat', {
+                sessionId: 'manual',
+                text: '实现算法',
+                autoRoute: false,
+                modelId: 'local',
+            })
+        ).text();
+        assert.equal(requests.at(-1).model, 'test');
+        assert.equal(
+            (
+                await post('/api/chat', {
+                    sessionId: 'bad',
+                    text: '你好',
+                    autoRoute: 'true',
+                })
+            ).status,
+            400,
+        );
     } finally {
         await Promise.all([
             new Promise<void>((resolve) => app.close(() => resolve())),

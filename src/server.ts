@@ -7,6 +7,7 @@ import { loadModels } from './config/models.ts';
 import { projectPath } from './config/paths.ts';
 import { openChatStore } from './storage/sqlite.ts';
 import { localTools } from './tools/index.ts';
+import { routeModel } from './agent/router.ts';
 
 export function createApp({
     models = loadModels(),
@@ -31,6 +32,14 @@ export function createApp({
             if (req.headers.origin && req.headers.origin !== `http://${host}`)
                 return json(403, { error: '不允许跨源请求' });
             const url = new URL(req.url || '/', `http://${host}`);
+            if (url.pathname === '/api/prompts' && req.method === 'GET')
+                return json(200, store.promptConfig());
+            if (url.pathname === '/api/prompts' && req.method === 'POST')
+                return json(200, store.savePrompt(await readJson(req)));
+            if (url.pathname === '/api/prompts/active' && req.method === 'POST') {
+                const data = await readJson(req);
+                return json(200, store.selectPrompt(data.id));
+            }
             // 清单来自 Agent 使用的同一个注册表，只返回说明和权限，不暴露执行函数。
             if (url.pathname === '/api/tools' && req.method === 'GET') {
                 return json(
@@ -86,13 +95,28 @@ export function createApp({
                     data.sessionId.length > 200 ||
                     typeof data.text !== 'string' ||
                     !data.text.trim() ||
-                    (data.prompt !== undefined && typeof data.prompt !== 'string')
+                    (data.prompt !== undefined && typeof data.prompt !== 'string') ||
+                    (data.autoRoute !== undefined && typeof data.autoRoute !== 'boolean')
                 )
                     throw new Error('消息参数无效');
-                const model = modelStore.find(data.modelId);
-                if (!model) throw new Error('请选择有效模型');
                 if (busy.has(data.sessionId)) return json(409, { error: '该会话正在生成中' });
-                await streamChat({ data, model, store, busy, res, controller });
+                const route = routeModel({
+                    models: modelStore.list(),
+                    modelId: data.modelId,
+                    autoRoute: data.autoRoute,
+                    text: data.text,
+                    history: data.autoRoute ? store.load(data.sessionId) : [],
+                });
+                const model = modelStore.find(route.model.id)!;
+                await streamChat({
+                    data,
+                    model,
+                    routeReason: route.reason,
+                    store,
+                    busy,
+                    res,
+                    controller,
+                });
                 return;
             }
             if (req.method === 'GET' && serveStatic(url.pathname, res)) return;

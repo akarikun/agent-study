@@ -24,7 +24,9 @@ export async function* runSessionTurn({
 
     const messages = store.load(sessionId);
     messages.push({ role: 'user', content: text.trim() });
-    for await (const event of runAgent({ model, messages, prompt, signal })) yield event;
+    const selectedPrompt = prompt ?? store.activePrompt().content;
+    for await (const event of runAgent({ model, messages, prompt: selectedPrompt, signal }))
+        yield event;
     signal?.throwIfAborted();
     // 只有整轮成功才保存；失败时保留原历史。
     store.save(sessionId, messages);

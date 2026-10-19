@@ -39,8 +39,6 @@ export async function* streamModelResponse(
             if (data.choices?.[0]?.delta?.content) yield data.choices[0].delta.content as string;
         }
         signal?.throwIfAborted();
-    } catch (err) {
-        console.log('line 分块解析失败', err);
     } finally {
         lines.close();
         stream.destroy();

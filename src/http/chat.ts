@@ -8,6 +8,7 @@ type ChatRequest = { sessionId: string; text: string; prompt?: string };
 type ChatContext = {
     data: ChatRequest;
     model: Model;
+    routeReason?: string;
     store: ReturnType<typeof openChatStore>;
     busy: Set<string>;
     res: ServerResponse;
@@ -16,7 +17,15 @@ type ChatContext = {
 
 const CHAT_TIMEOUT_MS = 900_000;
 
-export async function streamChat({ data, model, store, busy, res, controller }: ChatContext) {
+export async function streamChat({
+    data,
+    model,
+    routeReason,
+    store,
+    busy,
+    res,
+    controller,
+}: ChatContext) {
     busy.add(data.sessionId);
     const timeout = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
     res.writeHead(200, {
@@ -29,6 +38,7 @@ export async function streamChat({ data, model, store, busy, res, controller }: 
         if (!res.destroyed) res.write(`data: ${JSON.stringify(event)}\n\n`);
     };
     try {
+        send({ type: 'route', modelId: model.id, modelName: model.name, reason: routeReason });
         for await (const event of runSessionTurn({
             store,
             sessionId: data.sessionId,

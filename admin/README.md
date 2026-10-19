@@ -3,13 +3,16 @@
 在项目根目录运行 `npm run dev`，打开 `http://127.0.0.1:3000`。需要 Node.js 24+ 和可用的模型服务。不要直接双击 HTML 或使用静态服务器，页面需要同源 Node 接口。
 
 - 对话：发送消息后流式显示回答，工具执行状态通过提示显示；完整回答后保存到 `.data/chat.sqlite`，刷新后恢复。
+- 停止：生成期间点击“停止”可取消当前请求并结束等待，页面保留部分回复并标记已停止。未完成轮次不保存；已完成的工具操作不会自动撤销，正在执行的工具也不保证能中断。
+- 天气：`get_weather` 使用 Open-Meteo 联网查询城市今天的天气（城市当地日期），参数 `city` 必填、`countryCode` 可选，无需天气 API Key，单次 HTTP 请求超时 15 秒。示例：“查询北京今天的天气”。同名地点会要求确认；网络错误会回填模型并显示在页面。数据来源：https://open-meteo.com/ 。
 - 助手回复支持 Markdown（列表、粗体、代码块、表格等），用户消息保持纯文本。发送后显示等待动画，工具执行时显示状态，收到回复或失败后结束等待。依赖通过本地服务加载，新环境先执行 `npm install`。
-- 提示词：保存在当前浏览器，每轮发送给 Agent，服务端自动追加工具规则。
+- 提示词：助手配置与当前选择保存在 `.data/chat.sqlite` 的 `prompts`、`settings` 表。内置工具助手（默认）和图书管理助手；工作台可切换，提示词页面可编辑或另存为新助手。页面与 CLI 共用选择，下一轮生效；已有对话不会清空。旧浏览器提示词可手动导入编辑器再保存。系统仍会追加统一工具协议，切换角色不会新增业务工具。
 - 模型：首次加载 `.env`（没有时使用 `.env.example`）；网页修改后保存到 `.data/models.json`，重启和终端入口都会使用该文件。修改已有模型时 Key 留空保留原值。
 - 会话：支持新建、搜索、打开和删除；历史由 SQLite 管理。
+- 自动路由：工作台开关默认关闭，关闭时使用手选模型；开启时由 `src/agent/router.ts` 根据当前输入和最近两次用户提问判断。命中代码、分析类关键词或合并输入超过 800 字符时选参数量较大的模型，否则选较小的模型。参数量从模型名称中的 `4b`、`9b` 等标记识别；均无法识别时回退到首个配置模型。此规则用于本地学习，并非能力评测。一次用户请求只选一次模型，后续工具循环沿用它。开关保存在浏览器，页面显示本次实际模型与原因。
 
 API Key 只保存在服务端本机配置文件，不返回浏览器。服务只监听 `127.0.0.1`；当前 `read_file` 工具具有运行进程的文件读取权限。
 
-接口包括 `POST /api/chat`（SSE：delta/tool/done/error）、`GET/POST /api/models`、`DELETE /api/models/:id`、`GET /api/sessions`、`GET/DELETE /api/sessions/:id`。
+接口包括 `POST /api/chat`（可选 `autoRoute` 布尔值，默认 false；SSE：route/delta/tool/done/error）、`GET/POST /api/models`、`DELETE /api/models/:id`、`GET /api/sessions`、`GET/DELETE /api/sessions/:id`。`route` 事件只包含模型 ID、显示名称和路由原因，不包含密钥。
 
 `npm run check` 检查语法，`npm test` 运行 SQLite 与模拟模型 HTTP 集成测试，不需要真实模型或 Key。

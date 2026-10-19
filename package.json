@@ -4,12 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "publish":"npm run build:static",
     "main": "node src/main.ts",
     "dev": "node src/main.ts",
     "cli": "node src/main.ts --cli",
     "check": "node scripts/check.mjs",
     "test": "node --test tests/*.test.ts",
     "start": "node src/main.ts",
+    "build:static": "node scripts/build-static.mjs",
+    "preview:static": "node scripts/serve-static.mjs",
     "format": "prettier --write src admin tests scripts package.json .prettierrc.json",
     "format:check": "prettier --check src admin tests scripts package.json .prettierrc.json"
   },

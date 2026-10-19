@@ -7,6 +7,8 @@ const files: Record<string, [string, string]> = {
     '/': ['admin/index.html', 'text/html'],
     '/index.html': ['admin/index.html', 'text/html'],
     '/app.js': ['admin/app.js', 'text/javascript'],
+    '/runtime-config.js': ['admin/runtime-config.js', 'text/javascript'],
+    '/browser-runtime.js': ['admin/browser-runtime.js', 'text/javascript'],
     '/chat-render.js': ['admin/chat-render.js', 'text/javascript'],
     '/style.css': ['admin/style.css', 'text/css'],
     '/vendor/marked.js': ['node_modules/marked/lib/marked.umd.js', 'text/javascript'],

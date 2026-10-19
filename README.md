@@ -1,5 +1,7 @@
 # 本地 Ollama Agent
 
+公网静态版：`npm run build:static` 生成 `dist/`，`npm run preview:static` 预览。默认模拟回复，可切换浏览器直连访客自己的 Ollama 或兼容公共 API。配置和会话存浏览器，Key 仅在页面内存使用。详见 [静态演示说明](docs/STATIC_DEMO.md)。
+
 使用远程模型决策、本地工具执行和 SQLite 对话缓存的简洁学习项目。需要 Node.js 24 或以上，以及可用的模型服务。
 
 ## 运行
@@ -14,6 +16,8 @@ npm start
 `.env` 使用 `MODELS` JSON 数组配置多个模型，每项含 `url`（完整请求地址）、`model` 和 `key`（不需要时留空）。`MODEL_INDEX` 指定启动时使用的数组序号，默认 0；`CHAT_SESSION_ID` 指定会话。默认配置连接本机 Ollama，指定模型需已下载。
 
 - `/models`：列出模型，星号表示当前选择。
+- `/prompts`：列出 SQLite 中保存的助手配置和当前选择。
+- `/prompt tools` 或 `/prompt library`：切换到工具助手或图书管理助手；也可使用自定义助手的 ID。选择持久化到 SQLite，网页与 CLI 共用，下一轮生效。不同角色建议新建会话，避免旧上下文干扰。
 - `/model 1`：切换到数组中序号为 1 的模型，保留当前上下文。
 - `/exit`：退出。
 - `/clear`：清空当前会话及 SQLite 中对应的历史。

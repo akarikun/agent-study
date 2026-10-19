@@ -1,18 +1,49 @@
 // 配置和会话通过同源 Node 服务读取。
 const $ = (selector) => document.querySelector(selector);
+const browserRuntime = window.AgentBrowserRuntime;
+const appFetch = browserRuntime
+  ? browserRuntime.fetch.bind(browserRuntime)
+  : window.fetch.bind(window);
+let runtimeMode = 'server';
+let lastRoute = null;
+function routeSignature() {
+  return JSON.stringify([
+    runtimeMode,
+    state.selected,
+    state.autoRoute,
+    state.models.map(({ id, model, url }) => [id, model, url]),
+  ]);
+}
+function displayEndpoint(value) {
+  try {
+    const url = new URL(value);
+    url.username = '';
+    url.password = '';
+    url.search = '';
+    url.hash = '';
+    return url.href;
+  } catch {
+    return '未配置有效地址';
+  }
+}
+function renderRequestTarget() {
+  const target = $('#runtime-target');
+  target.hidden = !browserRuntime || runtimeMode !== 'direct';
+  if (target.hidden) return;
+  const actual = lastRoute?.signature === routeSignature() ? lastRoute : null;
+  const model = actual || (!state.autoRoute && state.models.find((m) => m.id === state.selected));
+  $('#runtime-target-model').textContent = model
+    ? `${actual ? '本轮实际模型' : '待请求模型'}：${model.name} · ${model.model}`
+    : state.autoRoute
+      ? '自动路由：发送后显示实际选中的模型与地址'
+      : '请先配置并选择模型';
+  $('#runtime-target-url').textContent = model ? displayEndpoint(model.url) : '';
+}
 const STORAGE = 'agent-studio-ui-v1';
-const defaultPrompt = `你是一个简洁、准确的助手，帮助用户完成任务。
-
-能根据已有知识或对话内容完成的任务，直接回答。
-需要访问外部数据或执行操作时，使用可用工具。
-
-工具规则：
-- 只使用已提供的工具，缺少必要参数时先询问用户。
-- 不编造结果，不声称尚未完成的操作已成功。
-- 收到工具结果后继续处理，信息足够时直接回答。`;
 const freshState = () => ({
-  prompt: defaultPrompt,
+  prompt: '',
   selected: 'local',
+  autoRoute: false,
   models: [
     {
       id: 'local',
@@ -25,14 +56,11 @@ const freshState = () => ({
   current: null,
 });
 let state = freshState();
+let legacyPrompt;
 try {
   const saved = JSON.parse(localStorage.getItem(STORAGE));
-  if (
-    saved &&
-    typeof saved.prompt === 'string' &&
-    Array.isArray(saved.models) &&
-    Array.isArray(saved.sessions)
-  )
+  if (typeof saved?.prompt === 'string') legacyPrompt = saved.prompt;
+  if (saved && Array.isArray(saved.models) && Array.isArray(saved.sessions))
     state = { ...state, ...saved };
 } catch {
   /* 存储不可用或数据损坏时使用默认页面。 */
@@ -40,14 +68,24 @@ try {
 
 let busy = false;
 let ready = false;
+let chatController = null;
+$('#stop-generation').onclick = () => {
+  if (!chatController || chatController.signal.aborted) return;
+  $('#stop-generation').disabled = true;
+  chatController.abort();
+};
+let promptConfig = { activeId: '', prompts: [] };
 let waitingMessage = null;
 let waitingText = '正在思考';
 function setBusy(value) {
   busy = value;
   $('.send-button').disabled = value;
+  for (const selector of ['#chat-prompt', '#prompt-profile', '#save-prompt', '#new-prompt'])
+    $(selector).disabled = value || !ready;
+  $('#runtime-mode').disabled = value || !ready;
 }
 async function api(path, options) {
-  const response = await fetch(path, options);
+  const response = await appFetch(path, options);
   const data = await response.json();
   if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
   return data;
@@ -79,18 +117,69 @@ async function initialize() {
   // 工具清单失败不影响聊天服务初始化。
   loadTools();
   try {
+    if (browserRuntime) {
+      runtimeMode = (await api('/api/runtime')).mode;
+      $('#runtime-controls').hidden = false;
+      $('#runtime-mode').value = runtimeMode;
+      $('#sidebar-storage-note').innerText =
+        '会话和配置保存在此浏览器\nAPI Key 仅保留在当前页面内存';
+      $('#model-storage-note').textContent =
+        '配置只保存在当前浏览器。API Key 仅保留在页面内存，刷新后需重新填写；请求直接发往你配置的地址。请勿在公共设备输入长期密钥。';
+      $('#key-storage-note').textContent = '可选，仅当前页面内存，刷新后清除';
+      $('#prompt-storage-note').textContent = '保存到当前浏览器';
+      $('#prompt-selection-note').textContent =
+        '选择保存在此浏览器中的助手，下一轮生效。不同任务建议新建对话。';
+      $('#chat-storage-label').textContent = '浏览器会话';
+      $('#local-service-label').textContent = '浏览器 Agent';
+      $('#connection-help').hidden = false;
+    }
     state.models = await api('/api/models');
+    applyPromptConfig(await api('/api/prompts'));
     if (!state.models.some((model) => model.id === state.selected))
       state.selected = state.models[0]?.id || '';
     await refreshSessions();
     ready = true;
+    setBusy(false);
     renderModels();
     renderChat();
-    $('.preview-tag').textContent = 'Agent 已连接';
+    updateRuntimeLabel();
   } catch (error) {
-    toast(`连接失败：${error.message}，请通过 Node 服务打开页面`);
+    toast(`初始化失败：${error.message}${browserRuntime ? '' : '，请通过 Node 服务打开页面'}`);
   }
 }
+function updateRuntimeLabel() {
+  $('.preview-tag').textContent = browserRuntime
+    ? runtimeMode === 'demo'
+      ? '演示模式 · 模拟回复'
+      : '浏览器直连 · 按需请求'
+    : 'Agent 已连接';
+  if (browserRuntime)
+    $('#runtime-note').textContent =
+      runtimeMode === 'demo'
+        ? '演示模式不调用模型或外网，天气为虚构样例。'
+        : '真实请求由此浏览器发往你的模型服务；localhost 指访问者自己的电脑。';
+  renderRequestTarget();
+}
+$('#runtime-mode').onchange = async (event) => {
+  if (busy || !ready) return;
+  setBusy(true);
+  try {
+    runtimeMode = (
+      await api('/api/runtime', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: event.target.value }),
+      })
+    ).mode;
+    updateRuntimeLabel();
+  } catch (error) {
+    event.target.value = runtimeMode;
+    toast(error.message);
+  } finally {
+    setBusy(false);
+    renderChat();
+  }
+};
 let editing = null;
 let toastTimer;
 function toast(text) {
@@ -104,8 +193,9 @@ function save() {
     localStorage.setItem(
       STORAGE,
       JSON.stringify({
-        prompt: state.prompt,
+        ...(legacyPrompt ? { prompt: legacyPrompt } : {}),
         selected: state.selected,
+        autoRoute: state.autoRoute,
         current: state.current,
         models: [],
         sessions: [],
@@ -130,6 +220,7 @@ const pageNames = {
   chat: '对话工作台',
   prompt: '系统提示词',
   models: '模型配置',
+  tools: '工具扩展',
   sessions: '会话记录',
 };
 function navigate(page) {
@@ -147,6 +238,8 @@ function navigate(page) {
 }
 function newChat() {
   if (busy) return toast('请等待当前回答完成');
+  $('#tool-errors').replaceChildren();
+  $('#tool-errors').hidden = true;
   state.current = null;
   save();
   renderChat();
@@ -167,7 +260,9 @@ function renderChat() {
       node('p', '', '从一个问题开始，或整理下一项任务。\n这里是你的 Agent 工作空间。'),
     );
     const suggestions = node('div', 'suggestions');
-    for (const text of ['梳理一个项目的结构', '优化我的系统提示词', '规划下一步开发任务']) {
+    for (const text of browserRuntime
+      ? ['北京今天的天气', '读取 README.md', '解释 Agent 的工具调用流程']
+      : ['梳理一个项目的结构', '优化我的系统提示词', '规划下一步开发任务']) {
       const button = node('button', '', text);
       button.type = 'button';
       button.onclick = () => {
@@ -217,7 +312,13 @@ function renderChat() {
     select.append(option);
   }
   select.value = state.selected || '';
-  select.disabled = !state.models.length;
+  select.disabled = busy || state.autoRoute || !state.models.length;
+  $('#auto-route').checked = state.autoRoute === true;
+  $('#auto-route').disabled = busy;
+  $('#routing-note').textContent = state.autoRoute
+    ? '按任务规则自动选择本地模型；手动选择暂不生效。'
+    : '使用下方手动选择的模型。';
+  renderRequestTarget();
 }
 function ensureSession(text = '新的对话') {
   let session = state.sessions.find((item) => item.id === state.current);
@@ -295,51 +396,130 @@ async function sendMessage(text) {
   if (busy) return;
   if (!state.selected) return toast('请先添加模型');
   const session = ensureSession(text);
+  const controller = new AbortController();
+  chatController = controller;
+  $('#stop-generation').hidden = false;
+  $('#stop-generation').disabled = false;
   const assistant = { role: 'assistant', content: '' };
+  $('#tool-errors').replaceChildren();
+  $('#tool-errors').hidden = true;
   waitingMessage = assistant;
   waitingText = '正在思考';
   session.messages.push({ role: 'user', content: text }, assistant);
   session.updated = Date.now();
   setBusy(true);
   $('#chat-input').value = '';
+  $('#route-result').textContent = '正在选择模型…';
+  lastRoute = null;
   save();
   renderChat();
   let completed = false;
+  let toolWaitTimer;
+  const stopToolWaitTimer = () => {
+    clearInterval(toolWaitTimer);
+    toolWaitTimer = undefined;
+  };
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      stopToolWaitTimer();
+      waitingMessage = null;
+      renderChat();
+    },
+    { once: true },
+  );
   try {
-    const response = await fetch('/api/chat', {
+    const response = await appFetch('/api/chat', {
       method: 'POST',
+      signal: controller.signal,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         sessionId: session.id,
         text,
         modelId: state.selected,
-        prompt: state.prompt,
+        autoRoute: state.autoRoute === true,
       }),
     });
     if (!response.ok) throw new Error((await response.json()).error || '请求失败');
-    for await (const event of readChatEvents(response)) {
+    for await (const event of readChatEvents(response, controller.signal)) {
+      if (controller.signal.aborted) break;
+      if (event.type === 'route') {
+        const model = state.models.find((item) => item.id === event.modelId);
+        if (model) lastRoute = { ...model, signature: routeSignature() };
+        renderRequestTarget();
+        $('#route-result').textContent = `本次模型：${event.modelName}。${event.reason}`;
+      }
       if (event.type === 'delta') {
+        stopToolWaitTimer();
         waitingMessage = null;
         assistant.content += event.text;
         renderChat();
       }
       if (event.type === 'tool') {
+        stopToolWaitTimer();
         waitingMessage = assistant;
-        waitingText = event.status === 'running' ? `正在调用 ${event.name}` : '正在整理工具结果';
+        if (event.status === 'error') {
+          const errors = $('#tool-errors');
+          errors.hidden = false;
+          const detail = node('details', 'tool-error');
+          const summary = node('summary', 'tool-error-summary');
+          const message = event.error || '未知错误';
+          const description = /ENOENT/.test(message)
+            ? '未找到文件'
+            : /EACCES|EPERM/.test(message)
+              ? '没有访问权限'
+              : '执行失败';
+          summary.append(
+            node('span', 'tool-error-icon', '!'),
+            node('code', 'tool-error-name', event.name),
+            node('span', 'tool-error-description', description),
+            node('span', 'tool-error-expand', '详情'),
+          );
+          detail.append(summary, node('pre', 'tool-error-detail', message));
+          errors.append(detail);
+          errors.scrollTop = errors.scrollHeight;
+          const startedAt = Date.now();
+          const updateToolWait = () => {
+            const seconds = Math.floor((Date.now() - startedAt) / 1000);
+            waitingText = `工具失败，模型正在决定下一步 (${seconds}) `;
+          };
+          updateToolWait();
+          toolWaitTimer = setInterval(() => {
+            updateToolWait();
+            renderChat();
+          }, 1000);
+        } else {
+          waitingText = event.status === 'running' ? `正在调用 ${event.name}` : '正在整理工具结果';
+        }
         renderChat();
       }
       if (event.type === 'error') throw new Error(event.message);
-      if (event.type === 'done') completed = true;
+      if (event.type === 'done') {
+        stopToolWaitTimer();
+        completed = true;
+        chatController = null;
+        $('#stop-generation').hidden = true;
+        waitingMessage = null;
+        renderChat();
+        break;
+      }
     }
     if (!completed) throw new Error('连接中断，回答未保存');
     await refreshSessions();
   } catch (error) {
+    stopToolWaitTimer();
     waitingMessage = null;
-    assistant.content += `\n[失败：${error.message}。本轮未保存，请重试。]`;
+    const stopped = controller.signal.aborted;
+    assistant.content += stopped
+      ? '\n[已停止生成]'
+      : `\n[失败：${error.message}。本轮未保存，请重试。]`;
     $('#chat-input').value = text;
     renderChat();
-    toast(error.message);
+    toast(stopped ? '已停止生成' : error.message);
   } finally {
+    stopToolWaitTimer();
+    chatController = null;
+    $('#stop-generation').hidden = true;
     waitingMessage = null;
     setBusy(false);
     renderChat();
@@ -348,8 +528,13 @@ async function sendMessage(text) {
 }
 
 // 网络分块只在这里拼接为 SSE 事件，发送流程只关注回答和工具状态。
-async function* readChatEvents(response) {
+async function* readChatEvents(response, signal) {
   const reader = response.body.getReader();
+  const cancel = () => {
+    void reader.cancel().catch(() => {});
+  };
+  signal?.addEventListener('abort', cancel, { once: true });
+  if (signal?.aborted) cancel();
   const decoder = new TextDecoder();
   let buffer = '';
   try {
@@ -367,6 +552,7 @@ async function* readChatEvents(response) {
       if (done) break;
     }
   } finally {
+    signal?.removeEventListener('abort', cancel);
     await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
@@ -379,27 +565,116 @@ $('#chat-input').onkeydown = (event) => {
 };
 $('#chat-model').onchange = (event) => {
   state.selected = event.target.value;
+  renderRequestTarget();
   save();
+};
+$('#auto-route').onchange = (event) => {
+  state.autoRoute = event.target.checked;
+  $('#route-result').textContent = '';
+  save();
+  renderChat();
 };
 $('#new-chat').onclick = newChat;
 $('#session-new').onclick = newChat;
-$('#prompt-editor').value = state.prompt;
+function applyPromptConfig(config) {
+  promptConfig = config;
+  const active = config.prompts.find((prompt) => prompt.id === config.activeId);
+  state.prompt = active?.content || '';
+  for (const selector of ['#chat-prompt', '#prompt-profile']) {
+    const select = $(selector);
+    select.replaceChildren();
+    for (const prompt of config.prompts) {
+      const option = node('option', '', prompt.name);
+      option.value = prompt.id;
+      select.append(option);
+    }
+    select.value = config.activeId;
+  }
+  $('#prompt-name').value = active?.name || '';
+  $('#prompt-editor').value = state.prompt;
+  countPrompt();
+  renderChat();
+}
+async function switchPrompt(event) {
+  if (!ready || busy) return;
+  const dirty =
+    $('#prompt-editor').value !== state.prompt ||
+    $('#prompt-name').value !==
+      promptConfig.prompts.find((p) => p.id === promptConfig.activeId)?.name;
+  if (dirty && !confirm('编辑内容尚未保存，切换会放弃这些修改。继续？')) {
+    event.target.value = promptConfig.activeId;
+    return;
+  }
+  setBusy(true);
+  try {
+    applyPromptConfig(
+      await api('/api/prompts/active', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: event.target.value }),
+      }),
+    );
+    toast('助手已切换，下一轮生效；不同任务建议新建对话');
+  } catch (error) {
+    event.target.value = promptConfig.activeId;
+    toast(error.message);
+  } finally {
+    setBusy(false);
+    renderChat();
+  }
+}
+$('#chat-prompt').onchange = switchPrompt;
+$('#prompt-profile').onchange = switchPrompt;
 function countPrompt() {
   $('#prompt-count').textContent = `${$('#prompt-editor').value.length} 字符`;
 }
 $('#prompt-editor').oninput = countPrompt;
 countPrompt();
-$('#save-prompt').onclick = () => {
-  state.prompt = $('#prompt-editor').value;
-  save();
-  renderChat();
-  toast('提示词已保存到浏览器');
+async function persistPrompt(create = false) {
+  if (!ready || busy) return;
+  const name = create ? window.prompt('新助手名称', '自定义助手') : $('#prompt-name').value;
+  if (name === null) return;
+  setBusy(true);
+  try {
+    applyPromptConfig(
+      await api('/api/prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...(create ? {} : { id: promptConfig.activeId }),
+          name,
+          content: $('#prompt-editor').value,
+        }),
+      }),
+    );
+    toast(`提示词已保存到${browserRuntime ? '浏览器' : ' SQLite'}，下一轮生效`);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    setBusy(false);
+    renderChat();
+  }
+}
+$('#save-prompt').onclick = () => persistPrompt();
+$('#new-prompt').onclick = () => persistPrompt(true);
+$('#import-prompt').onclick = () => {
+  try {
+    const legacy = JSON.parse(localStorage.getItem(STORAGE));
+    if (!legacy?.prompt) return toast('没有找到旧的浏览器提示词');
+    $('#prompt-editor').value = legacy.prompt;
+    countPrompt();
+    toast('旧提示词已载入编辑器，保存或另存为新助手后生效');
+  } catch {
+    toast('无法读取旧提示词');
+  }
 };
 $('#reset-prompt').onclick = () => {
-  if (!confirm('将编辑器内容恢复为默认提示词？')) return;
-  $('#prompt-editor').value = defaultPrompt;
+  if (!confirm('放弃修改，恢复当前助手已保存的内容？')) return;
+  $('#prompt-editor').value = state.prompt;
+  $('#prompt-name').value =
+    promptConfig.prompts.find((p) => p.id === promptConfig.activeId)?.name || '';
   countPrompt();
-  toast('已恢复默认，点击保存后生效');
+  toast('已恢复保存内容');
 };
 function openModel(model = null) {
   editing = model?.id ?? null;
@@ -440,13 +715,17 @@ $('#model-form').onsubmit = async (event) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...model, id: editing, ...(key ? { key } : {}) }),
     });
-    if (!state.selected) state.selected = model.id;
+    if (!state.selected) state.selected = state.models.at(-1)?.id || '';
     save();
     renderModels();
     renderChat();
     $('#model-dialog').close();
     $('#model-form').reset();
-    toast('模型配置已保存到服务端');
+    toast(
+      browserRuntime
+        ? '配置已保存到浏览器；切换浏览器直连后发送消息进行验证'
+        : '模型配置已保存到服务端',
+    );
   } catch (error) {
     toast(error.message);
   }
@@ -469,7 +748,7 @@ function renderModels() {
     const detail = node('div', 'model-detail');
     for (const [label, value] of [
       ['请求地址', model.url],
-      ['API Key', model.hasKey ? '已在服务端配置' : '未设置'],
+      ['API Key', model.hasKey ? (browserRuntime ? '当前页面已配置' : '已在服务端配置') : '未设置'],
     ]) {
       const row = node('div');
       row.append(node('span', '', label), node('code', '', value));
