@@ -2,70 +2,38 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createWeatherTool } from '../src/tools/weather.ts';
 
-test('天气工具查询城市坐标和当地今日预报，返回来源与单位', async () => {
-    const urls: URL[] = [];
+test('地区 ID 从本地取得，只请求一次天气接口，直接返回原始结果', async () => {
+    const weather = {
+        city: '北京',
+        cityid: 101010100,
+        realtime: { temp: '20', weather: '晴' },
+        weathers: [],
+    };
+    let calls = 0;
     const tool = createWeatherTool((async (input: URL) => {
-        urls.push(input);
-        return Response.json(
-            urls.length === 1
-                ? {
-                      results: [
-                          {
-                              name: '北京',
-                              country_code: 'CN',
-                              latitude: 39.9,
-                              longitude: 116.4,
-                          },
-                      ],
-                  }
-                : {
-                      timezone: 'Asia/Shanghai',
-                      current: { temperature_2m: 20 },
-                      current_units: { temperature_2m: '°C' },
-                      daily: {
-                          time: ['2026-10-19'],
-                          temperature_2m_max: [23],
-                          temperature_2m_min: [12],
-                          precipitation_probability_max: [0],
-                          weather_code: [0],
-                      },
-                      daily_units: { temperature_2m_max: '°C', precipitation_probability_max: '%' },
-                  },
-        );
+        calls++;
+        assert.equal(input.origin, 'http://aider.meizu.com');
+        assert.equal(input.searchParams.get('cityIds'), '101010100');
+        return Response.json({ code: '200', value: [weather] });
     }) as typeof fetch);
-    const result: any = await tool.execute({ city: '北京' });
-    assert.equal(urls[0].searchParams.get('name'), 'Beijing');
-    assert.equal(urls[1].hostname, 'api.open-meteo.com');
-    assert.equal(urls[1].searchParams.get('timezone'), 'auto');
-    assert.equal(urls[1].searchParams.get('forecast_days'), '1');
-    assert.equal(result.date, '2026-10-19');
-    assert.equal(result.today.precipitationProbabilityMax, 0);
-    assert.equal(result.source, 'Open-Meteo');
-    assert.equal(result.currentUnits.temperature_2m, '°C');
+    assert.deepEqual(await tool.execute({ countyname: '北京' }), weather);
+    assert.equal(calls, 1);
+    assert.deepEqual(await tool.execute({ city: '北京' }), weather);
+    await assert.rejects(tool.execute({ countyname: '不存在' }), /未找到地区/);
+    await assert.rejects(tool.execute({}), /城市名称/);
+    assert.equal(calls, 2);
+    const candidates: any = await tool.execute({ countyname: '朝阳' });
+    assert.equal(candidates.needsClarification, true);
+    assert.equal(calls, 2);
 });
 
-test('天气工具校验参数、缺失城市、同名城市及网络错误', async () => {
-    const empty = createWeatherTool((async () => Response.json({ results: [] })) as typeof fetch);
-    await assert.rejects(empty.execute({}), /city/);
-    await assert.rejects(empty.execute({ city: '北京', countryCode: 'invalid' }), /countryCode/);
-    await assert.rejects(empty.execute({ city: '不存在' }), /未找到城市/);
-    const ambiguous = createWeatherTool((async () =>
-        Response.json({
-            results: [
-                { name: 'Springfield', country_code: 'US' },
-                { name: 'Springfield', country_code: 'CA' },
-            ],
-        })) as typeof fetch);
-    assert.equal(
-        ((await ambiguous.execute({ city: 'Springfield' })) as any).needsClarification,
-        true,
-    );
-    const failed = createWeatherTool(
-        (async () => new Response('', { status: 503 })) as typeof fetch,
-    );
-    await assert.rejects(failed.execute({ city: '北京' }), /HTTP 503/);
-    const offline = createWeatherTool((async () => {
-        throw new Error('网络不可用');
-    }) as typeof fetch);
-    await assert.rejects(offline.execute({ city: '北京' }), /天气服务请求失败.*网络不可用/);
+test('天气请求失败向上传递，前端能收到工具错误', async () => {
+    const tool = createWeatherTool((async () => new Response('', { status: 503 })) as typeof fetch);
+    await assert.rejects(tool.execute({ countyname: '北京' }), /HTTP 503/);
+    const busy = createWeatherTool((async () =>
+        Response.json({ code: '500', message: '系统繁忙' })) as typeof fetch);
+    await assert.rejects(busy.execute({ countyname: '北京' }), /系统繁忙/);
+    const empty = createWeatherTool((async () =>
+        Response.json({ code: 200, value: [] })) as typeof fetch);
+    await assert.rejects(empty.execute({ countyname: '北京' }), /未返回天气数据/);
 });

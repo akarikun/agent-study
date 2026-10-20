@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { Tool } from './types.ts';
+import type { Tool } from './utils/types.ts';
 
 export const readFileTool: Tool = {
     readOnly: true,

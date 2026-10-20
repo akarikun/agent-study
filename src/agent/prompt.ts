@@ -1,4 +1,4 @@
-import type { Tool } from '../tools/types.ts';
+import type { Tool } from '../tools/utils/types.ts';
 
 export const defaultPrompt =
     '你是一个简洁、准确的工具助手，帮助用户完成任务。能直接回答时直接回答，需要外部数据时使用工具。';

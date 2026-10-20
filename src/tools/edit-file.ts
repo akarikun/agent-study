@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import type { Tool } from './types.ts';
-import { assertFilePath } from './validation.ts';
+import type { Tool } from './utils/types.ts';
+import { assertFilePath } from './utils/validation.ts';
 
 export const editFileTool: Tool = {
     readOnly: false,

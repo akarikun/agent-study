@@ -1,8 +1,8 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import type { Tool } from './types.ts';
-import { assertFilePath } from './validation.ts';
-import { checkJavaScript } from './syntax-check.ts';
+import type { Tool } from './utils/types.ts';
+import { assertFilePath } from './utils/validation.ts';
+import { checkJavaScript } from './utils/syntax-check.ts';
 
 export const writeFileTool: Tool = {
     readOnly: false,

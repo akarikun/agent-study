@@ -53,7 +53,7 @@ docs/               开发记录
 | `src/config/models.ts` | 加载环境变量和本地模型配置 |
 | `src/tools/index.ts` | 统一注册 read_file、write_file、edit_file |
 | `src/tools/*-file.ts` | 各文件工具的独立实现 |
-| `src/tools/syntax-check.ts` | JavaScript 语法检查与结果反馈 |
+| `src/tools/utils/syntax-check.ts` | JavaScript 语法检查与结果反馈 |
 | `src/storage/sqlite.ts` | 会话读取、保存、清空和关闭数据库 |
 | `tests/sqlite.test.ts` | 验证会话持久化、覆盖更新、隔离与清空 |
 

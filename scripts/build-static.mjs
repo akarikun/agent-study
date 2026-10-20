@@ -17,11 +17,14 @@ const modules = [
     'src/agent/prompt.ts',
     'src/agent/context.ts',
     'src/agent/router.ts',
+    'src/tools/utils/weather.data.ts',
     'src/tools/weather.ts',
 ];
 const code = modules
     .map((file) =>
-        stripTypeScriptTypes(readFileSync(new URL(file, root), 'utf8')).replace(/^export /gm, ''),
+        stripTypeScriptTypes(readFileSync(new URL(file, root), 'utf8'))
+            .replace(/^import \{ weatherData \} from ['"]\.\/utils\/weather\.data\.ts['"];?\s*$/m, '')
+            .replace(/^export /gm, ''),
     )
     .join('\n');
 writeFileSync(

@@ -95,17 +95,16 @@
     get_weather: {
       readOnly: true,
       description:
-        '查询城市今天的天气，参数 city 必填、countryCode 可选。演示模式返回明确标记的虚构样例；直连模式联网查询 Open-Meteo。',
+        '查询中国城市或区县天气，参数 countyname（兼容 city）。ID 从本地表取得，无需另查；同名地区需通过 areaid 确认。演示模式返回虚构样例，直连模式使用魅族天气，返回原始数据，按数据日期回答。',
     },
   };
   async function executeTool(call, mode, signal) {
     if (!Object.hasOwn(toolDefinitions, call.tool)) throw new Error(`未知工具：${call.tool}`);
     if (call.tool === 'get_weather') {
-      if (!call.params.city?.trim()) throw new Error('city 必填');
       if (mode === 'demo')
         return {
           demo: true,
-          city: call.params.city,
+          city: call.params.countyname || call.params.city || call.params.areaid,
           temperature: 20,
           description: '晴（虚构演示数据，不代表真实天气）',
         };
