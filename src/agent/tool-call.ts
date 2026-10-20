@@ -18,7 +18,7 @@ export function parseToolCall(answer: string) {
             params: data?.tool_call?.params ?? {},
         };
     } catch {
-        console.log('模型回答不是 xml，按普通文本处理：', answer);
+        // 非工具输出按普通回答处理，由调用层记录决策。
     }
 
     return call;

@@ -1,6 +1,7 @@
 import { runAgent } from './agent.ts';
 import type { Model } from '../config/models.ts';
 import type { openChatStore } from '../storage/sqlite.ts';
+import { createAgentLogger } from './logger.ts';
 
 type Store = ReturnType<typeof openChatStore>;
 
@@ -25,9 +26,41 @@ export async function* runSessionTurn({
     const messages = store.load(sessionId);
     messages.push({ role: 'user', content: text.trim() });
     const selectedPrompt = prompt ?? store.activePrompt().content;
-    for await (const event of runAgent({ model, messages, prompt: selectedPrompt, signal }))
-        yield event;
-    signal?.throwIfAborted();
-    // 只有整轮成功才保存；失败时保留原历史。
-    store.save(sessionId, messages);
+    const log = createAgentLogger(sessionId, model.key);
+    const endpoint = new URL(model.url);
+    log({
+        stage: 'request',
+        message: '开始处理用户任务',
+        data: {
+            model: model.name,
+            endpoint: `${endpoint.origin}${endpoint.pathname}`,
+            input: text.trim(),
+            historyMessages: messages.length - 1,
+        },
+    });
+    try {
+        for await (const event of runAgent({
+            model,
+            messages,
+            prompt: selectedPrompt,
+            signal,
+            onStep: log,
+        }))
+            yield event;
+        signal?.throwIfAborted();
+        // 只有整轮成功才保存；失败时保留原历史。
+        store.save(sessionId, messages);
+        log({
+            stage: 'done',
+            message: '回答完成，会话已保存',
+            data: { messages: messages.length },
+        });
+    } catch (error) {
+        log({
+            stage: 'error',
+            message: signal?.aborted ? '已取消或超时，本轮未保存' : '本轮失败，未保存',
+            data: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+    }
 }

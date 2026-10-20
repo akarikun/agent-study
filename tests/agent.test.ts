@@ -59,7 +59,22 @@ test('注册工具均可执行，工具结果回填上下文', async () => {
         for (const tool of ['read', 'write', 'unmarked']) {
             const messages: Message[] = [{ role: 'user', content: tool }];
             const events = [];
-            for await (const event of runAgent({ model, messages, tools })) events.push(event);
+            const steps: string[] = [];
+            for await (const event of runAgent({
+                model,
+                messages,
+                tools,
+                onStep: (step) => steps.push(step.stage),
+            }))
+                events.push(event);
+            assert.deepEqual(steps, [
+                'request',
+                'decision',
+                'tool',
+                'result',
+                'request',
+                'decision',
+            ]);
             assert.equal(
                 events
                     .filter((event) => event.type === 'delta')
@@ -78,6 +93,31 @@ test('注册工具均可执行，工具结果回填上下文', async () => {
         })) {
         }
         assert.equal(called, 4);
+        const failedSteps: string[] = [];
+        const failedEvents = [];
+        for await (const event of runAgent({
+            model,
+            messages: [{ role: 'user', content: 'read' }],
+            tools: {
+                read: {
+                    description: '模拟失败',
+                    execute: async () => {
+                        throw new Error('读取失败');
+                    },
+                },
+            },
+            onStep: (step) => failedSteps.push(step.stage),
+        }))
+            failedEvents.push(event);
+        assert.deepEqual(failedSteps, [
+            'request',
+            'decision',
+            'tool',
+            'error',
+            'request',
+            'decision',
+        ]);
+        assert.ok(failedEvents.some((event) => event.type === 'tool' && event.status === 'error'));
     } finally {
         await new Promise<void>((resolve) => mock.close(() => resolve()));
     }

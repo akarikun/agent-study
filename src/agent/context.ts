@@ -22,7 +22,5 @@ export function buildContext(
         }
     }
 
-    let msg = [...history.slice(start), ...currentTurn];
-    console.log(`buildContext ${JSON.stringify(msg)}`);
-    return msg;
+    return [...history.slice(start), ...currentTurn];
 }

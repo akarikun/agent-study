@@ -6,6 +6,7 @@ import { localTools } from '../tools/index.ts';
 import type { Message } from '../storage/sqlite.ts';
 import type { Model } from '../config/models.ts';
 import type { Tool } from '../tools/index.ts';
+import type { AgentStep } from './logger.ts';
 
 export { defaultPrompt } from './prompt.ts';
 
@@ -21,12 +22,14 @@ export async function* runAgent({
     prompt = defaultPrompt,
     signal,
     tools = localTools,
+    onStep,
 }: {
     model: Model;
     messages: Message[];
     prompt?: string;
     signal?: AbortSignal;
     tools?: Record<string, Tool>;
+    onStep?: (step: AgentStep) => void;
 }): AsyncGenerator<AgentEvent> {
     const system = createSystemMessage(prompt, tools);
     // 进入循环前固定本轮起点；后续追加的工具消息都属于本轮。
@@ -43,6 +46,20 @@ export async function* runAgent({
         const context = buildContext(messages.slice(0, historyEnd), messages.slice(historyEnd), {
             maxHistoryTurns: 3,
         });
+        const requestedAt = Date.now();
+        onStep?.({
+            stage: 'request',
+            round: round + 1,
+            message: '等待模型输出',
+            data: {
+                model: model.model,
+                messages: context.length + 1,
+                characters:
+                    system.content.length +
+                    context.reduce((sum, item) => sum + item.content.length, 0),
+                tools: Object.keys(tools),
+            },
+        });
         for await (const text of streamModelResponse(model, [system, ...context], signal)) {
             answer += text;
             // XML/代码围栏开头先缓冲，避免把自定义工具协议显示为回答。
@@ -55,6 +72,12 @@ export async function* runAgent({
         if (!answer.trim()) throw new Error('模型返回了空回答');
         const call = parseToolCall(answer);
         const isToolCall = typeof call?.tool === 'string';
+        onStep?.({
+            stage: 'decision',
+            round: round + 1,
+            message: isToolCall ? `调用工具 ${call.tool}` : '给出最终回答，不再调用工具',
+            data: { durationMs: Date.now() - requestedAt, outputCharacters: answer.length },
+        });
         messages.push({
             role: 'assistant',
             content: answer,
@@ -66,6 +89,8 @@ export async function* runAgent({
             return;
         }
         yield { type: 'tool', name: call.tool, status: 'running' };
+        const toolStartedAt = Date.now();
+        onStep?.({ stage: 'tool', round: round + 1, message: call.tool, data: call.params ?? {} });
         let result;
         let toolError: string | undefined;
         try {
@@ -76,6 +101,12 @@ export async function* runAgent({
             result = { error: toolError };
         }
         signal?.throwIfAborted();
+        onStep?.({
+            stage: toolError === undefined ? 'result' : 'error',
+            round: round + 1,
+            message: `${call.tool} ${toolError === undefined ? '成功' : '失败'}，结果回填给模型继续判断`,
+            data: { durationMs: Date.now() - toolStartedAt, result },
+        });
         // 当前使用自定义 XML 工具协议，结果以 user 消息回填；internal 使页面隐藏这些中间步骤。
         messages.push({
             role: 'user',
