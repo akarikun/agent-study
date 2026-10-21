@@ -62,6 +62,7 @@ test('注册工具均可执行，工具结果回填上下文', async () => {
             const steps: string[] = [];
             for await (const event of runAgent({
                 model,
+                reflect: false,
                 messages,
                 tools,
                 onStep: (step) => steps.push(step.stage),
@@ -87,6 +88,7 @@ test('注册工具均可执行，工具结果回填上下文', async () => {
         assert.match(requests[0].messages[0].content, /read：允许读取/);
         assert.match(requests[0].messages[0].content, /write：允许写入/);
         for await (const _ of runAgent({
+            reflect: false,
             model,
             messages: [{ role: 'user', content: 'write' }],
             tools,
@@ -96,6 +98,7 @@ test('注册工具均可执行，工具结果回填上下文', async () => {
         const failedSteps: string[] = [];
         const failedEvents = [];
         for await (const event of runAgent({
+            reflect: false,
             model,
             messages: [{ role: 'user', content: 'read' }],
             tools: {

@@ -13,6 +13,7 @@ export async function* runSessionTurn({
     model,
     prompt,
     signal,
+    planExecute = false,
 }: {
     store: Store;
     sessionId: string;
@@ -20,6 +21,7 @@ export async function* runSessionTurn({
     model: Model;
     prompt?: string;
     signal?: AbortSignal;
+    planExecute?: boolean;
 }) {
     if (!text?.trim()) throw new Error('消息不能为空');
 
@@ -45,6 +47,7 @@ export async function* runSessionTurn({
             prompt: selectedPrompt,
             signal,
             onStep: log,
+            planExecute,
         }))
             yield event;
         signal?.throwIfAborted();

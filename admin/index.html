@@ -108,6 +108,18 @@
                 />
               </label>
               <p id="routing-note" class="field-note"></p>
+              <label class="routing-toggle" for="plan-execute">
+                先规划再执行
+                <input id="plan-execute" type="checkbox" role="switch" />
+              </label>
+              <p class="field-note">本地 Node 模式可用；额外调用模型生成计划。</p>
+              <div
+                id="plan-progress"
+                class="field-note"
+                role="status"
+                style="white-space: pre-wrap"
+                hidden
+              ></div>
               <label for="chat-model">使用模型</label
               ><select id="chat-model"></select>
               <div id="route-result" class="field-note" role="status"></div>

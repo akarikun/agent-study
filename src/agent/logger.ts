@@ -1,17 +1,19 @@
 import { inspect } from 'node:util';
 
 export type AgentStep = {
-    stage: 'request' | 'decision' | 'tool' | 'result' | 'error' | 'done';
+    stage: 'request' | 'decision' | 'tool' | 'result' | 'review' | 'plan' | 'error' | 'done';
     round?: number;
     message: string;
     data?: unknown;
 };
 
 const stages = {
+    plan: ['36', '任务计划'],
     request: ['36', '请求模型'],
     decision: ['35', '模型决策'],
     tool: ['34', '执行工具'],
     result: ['32', '工具结果'],
+    review: ['33', '答案复查'],
     error: ['31', '错误'],
     done: ['32', '本轮完成'],
 };
@@ -19,7 +21,7 @@ const stages = {
 // 后台日志走 stderr，避免与 CLI 的流式回答混在 stdout 中。
 export function createAgentLogger(sessionId: string, secret?: string) {
     const traceId = crypto.randomUUID().slice(0, 8);
-    const started = Date.now();
+    let previousLogAt: number | undefined;
     const color =
         !process.env.NO_COLOR && (process.stderr.isTTY || process.env.FORCE_COLOR === '1');
     const paint = (code: string, value: string) => (color ? `\x1b[${code}m${value}\x1b[0m` : value);
@@ -44,15 +46,18 @@ export function createAgentLogger(sessionId: string, secret?: string) {
         return value;
     };
     return (step: AgentStep) => {
+        const now = Date.now();
+        const elapsed = previousLogAt === undefined ? 0 : Math.max(0, now - previousLogAt);
+        previousLogAt = now;
         const [code, label] = stages[step.stage];
-        const time = new Date().toLocaleTimeString('zh-CN', {
+        const time = new Date(now).toLocaleTimeString('zh-CN', {
             hour12: false,
             timeZone: 'Asia/Shanghai',
         });
         const scope = `${traceId}/${String(clean(sessionId)).slice(0, 36)}`;
         const round = step.round ? ` 第${step.round}步` : '';
         process.stderr.write(
-            `${paint('90', `[${time}] [${scope}]`)} ${paint(code, `${label}${round}`)} ${clean(step.message)} ${paint('90', `+${Date.now() - started}ms`)}\n`,
+            `${paint('90', `[${time}] [${scope}]`)} ${paint(code, `${label}${round}`)} ${clean(step.message)} ${paint('90', `+${elapsed}ms`)}\n`,
         );
         if (step.data !== undefined) {
             const detail = inspect(clean(step.data), {

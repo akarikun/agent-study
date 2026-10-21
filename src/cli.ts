@@ -59,8 +59,15 @@ export async function startCLI() {
                     sessionId,
                     model: models[selected],
                     text,
+                    planExecute: process.argv.includes('--plan'),
                 })) {
                     if (event.type === 'delta') process.stdout.write(event.text);
+                    else if (event.type === 'plan')
+                        console.log(`\n[计划 ${event.status}]`, event.steps);
+                    else if (event.type === 'review')
+                        console.log(
+                            `\n[答案复查：${event.status === 'running' ? '进行中' : '完成'}]`,
+                        );
                     else
                         console.log(
                             `\n[工具 ${event.name}: ${event.status}${event.error ? `：${event.error}` : ''}]`,

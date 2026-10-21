@@ -12,14 +12,27 @@ import { openChatStore } from '../src/storage/sqlite.ts';
 test('后台流式对话、工具循环、会话持久化、模型密钥与错误处理', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'agent-api-'));
     const requests: any[] = [];
+    const reviewRequests: any[] = [];
     let markCancelled: () => void;
     const modelCancelled = new Promise<void>((resolve) => {
         markCancelled = resolve;
+    });
+    let markModelStarted: () => void;
+    const modelStarted = new Promise<void>((resolve) => {
+        markModelStarted = resolve;
     });
     const mock = createServer(async (req, res) => {
         let body = '';
         for await (const chunk of req) body += chunk;
         const data = JSON.parse(body);
+        if (data.messages[0]?.content.includes('你正在执行单次答案复查')) {
+            reviewRequests.push(data);
+            const draft = JSON.parse(data.messages.at(-1).content).draft;
+            res.end(
+                `data: ${JSON.stringify({ choices: [{ delta: { content: draft } }] })}\n\ndata: [DONE]\n\n`,
+            );
+            return;
+        }
         requests.push(data);
         if (data.messages.at(-1).content === 'wait-cancel') {
             res.writeHead(200, { 'Content-Type': 'text/event-stream' });
@@ -27,6 +40,7 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
                 `data: ${JSON.stringify({ choices: [{ delta: { content: '部分输出' } }] })}\n\n`,
             );
             res.once('close', () => markCancelled());
+            markModelStarted();
             return;
         }
         if (data.messages.at(-1).content === 'missing-file') {
@@ -147,6 +161,8 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
             '你好，工具执行完成',
         );
         assert.equal(events.at(-1).type, 'done');
+        assert.ok(events.some((event) => event.type === 'review' && event.status === 'running'));
+        assert.ok(reviewRequests.length > 0);
         assert.match(requests[0].messages[0].content, /^custom/);
         const sessions = await (await fetch(base + '/api/sessions')).json();
         assert.equal(sessions[0].messages.length, 2);
@@ -201,7 +217,7 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
                     modelId: 'local',
                 })
             ).text();
-            assert.doesNotMatch(result, /"status":"done"/);
+            assert.doesNotMatch(result, /"type":"tool"[^\n]*"status":"done"/);
             if (text === 'missing-file') {
                 assert.match(result, /"status":"error"/);
                 assert.match(result, /ENOENT/);
@@ -227,12 +243,9 @@ test('后台流式对话、工具循环、会话持久化、模型密钥与错�
             signal: cancellation.signal,
         });
         const pendingReader = pending.body!.getReader();
-        let received = '';
-        while (!received.includes('部分输出')) {
-            const chunk = await pendingReader.read();
-            assert.equal(chunk.done, false);
-            received += new TextDecoder().decode(chunk.value);
-        }
+        // 初稿现在不会发给前端，等待模型开始生成后直接取消。
+        await pendingReader.read();
+        await modelStarted;
         cancellation.abort();
         await Promise.race([
             modelCancelled,

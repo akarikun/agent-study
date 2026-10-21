@@ -314,6 +314,7 @@ function renderChat() {
   select.value = state.selected || '';
   select.disabled = busy || state.autoRoute || !state.models.length;
   $('#auto-route').checked = state.autoRoute === true;
+  if ($('#plan-execute')) $('#plan-execute').disabled = busy || !!browserRuntime;
   $('#auto-route').disabled = busy;
   $('#routing-note').textContent = state.autoRoute
     ? '按任务规则自动选择本地模型；手动选择暂不生效。'
@@ -403,6 +404,11 @@ async function sendMessage(text) {
   const assistant = { role: 'assistant', content: '' };
   $('#tool-errors').replaceChildren();
   $('#tool-errors').hidden = true;
+  const planProgress = $('#plan-progress');
+  if (planProgress) {
+    planProgress.textContent = '';
+    planProgress.hidden = true;
+  }
   waitingMessage = assistant;
   waitingText = '正在思考';
   session.messages.push({ role: 'user', content: text }, assistant);
@@ -438,6 +444,7 @@ async function sendMessage(text) {
         text,
         modelId: state.selected,
         autoRoute: state.autoRoute === true,
+        planExecute: !browserRuntime && $('#plan-execute')?.checked === true,
       }),
     });
     if (!response.ok) throw new Error((await response.json()).error || '请求失败');
@@ -453,6 +460,44 @@ async function sendMessage(text) {
         stopToolWaitTimer();
         waitingMessage = null;
         assistant.content += event.text;
+        renderChat();
+      }
+      if (event.type === 'plan') {
+        stopToolWaitTimer();
+        const labels = { pending: '待执行', running: '执行中', done: '已完成', blocked: '已暂停' };
+        if (planProgress) {
+          planProgress.hidden = false;
+          planProgress.textContent =
+            event.status === 'planning'
+              ? '正在生成计划…'
+              : event.steps
+                  .map(
+                    (step, index) =>
+                      `${index + 1}. [${labels[step.status]}] ${step.title}${step.result ? `\n   ${step.result}` : ''}`,
+                  )
+                  .join('\n');
+        }
+        waitingMessage = assistant;
+        waitingText =
+          event.status === 'planning' ? '正在规划任务（最长 60 秒）' : '正在根据计划处理任务';
+        renderChat();
+      }
+      if (event.type === 'review') {
+        stopToolWaitTimer();
+        waitingMessage = assistant;
+        if (event.status === 'running') {
+          const startedAt = Date.now();
+          const updateReviewWait = () => {
+            const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+            const limit = event.timeoutMs ? `，最长 ${Math.ceil(event.timeoutMs / 1000)} 秒` : '';
+            waitingText = `正在复查答案（已等待 ${elapsed} 秒${limit}）`;
+          };
+          updateReviewWait();
+          toolWaitTimer = setInterval(() => {
+            updateReviewWait();
+            renderChat();
+          }, 1000);
+        } else waitingText = '复查完成，正在输出';
         renderChat();
       }
       if (event.type === 'tool') {

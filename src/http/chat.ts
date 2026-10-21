@@ -4,7 +4,7 @@ import type { openChatStore } from '../storage/sqlite.ts';
 import { runSessionTurn } from '../agent/session.ts';
 import { errorMessage } from './responses.ts';
 
-type ChatRequest = { sessionId: string; text: string; prompt?: string };
+type ChatRequest = { sessionId: string; text: string; prompt?: string; planExecute?: boolean };
 type ChatContext = {
     data: ChatRequest;
     model: Model;
@@ -46,6 +46,7 @@ export async function streamChat({
             model,
             prompt: data.prompt,
             signal: controller.signal,
+            planExecute: data.planExecute,
         }))
             send(event);
         // 只有整轮成功且未被取消才保存，done 表示服务端已完成持久化。

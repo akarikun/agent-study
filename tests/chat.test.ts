@@ -126,6 +126,11 @@ test('聊天 Markdown 安全渲染，首段回复前加载，流式输出和失�
         send({ type: 'tool', name: 'read_file', status: 'running' });
         await tick();
         assert.match(win.document.querySelector('.reply-loading')!.textContent!, /read_file/);
+        send({ type: 'review', status: 'running', timeoutMs: 60000 });
+        await tick();
+        assert.match(win.document.querySelector('.reply-loading')!.textContent!, /正在复查答案/);
+        assert.match(win.document.querySelector('.reply-loading')!.textContent!, /最长 60 秒/);
+        send({ type: 'review', status: 'done' });
         send({ type: 'delta', text: '**回复**' });
         await tick();
         assert.equal(win.document.querySelector('.reply-loading'), null);

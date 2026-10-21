@@ -1,10 +1,13 @@
 // 唯一启动入口：默认提供网页后台，--cli 切换到终端对话。
 async function main() {
     const args = process.argv.slice(2);
-    if (args.length > 1 || (args.length === 1 && args[0] !== '--cli')) {
-        throw new Error('用法：node src/main.ts [--cli]');
+    if (
+        args.some((arg) => !['--cli', '--plan'].includes(arg)) ||
+        (args.includes('--plan') && !args.includes('--cli'))
+    ) {
+        throw new Error('用法：node src/main.ts [--cli [--plan]]');
     }
-    if (args[0] === '--cli') {
+    if (args.includes('--cli')) {
         const { startCLI } = await import('./cli.ts');
         await startCLI();
     } else {
