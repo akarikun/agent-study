@@ -2,10 +2,10 @@
 async function main() {
     const args = process.argv.slice(2);
     if (
-        args.some((arg) => !['--cli', '--plan'].includes(arg)) ||
-        (args.includes('--plan') && !args.includes('--cli'))
+        args.some((arg) => !['--cli', '--plan', '--multi-agent'].includes(arg)) ||
+        (args.some((arg) => ['--plan', '--multi-agent'].includes(arg)) && !args.includes('--cli'))
     ) {
-        throw new Error('用法：node src/main.ts [--cli [--plan]]');
+        throw new Error('用法：node src/main.ts [--cli [--plan] [--multi-agent]]');
     }
     if (args.includes('--cli')) {
         const { startCLI } = await import('./cli.ts');

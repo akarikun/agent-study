@@ -97,7 +97,8 @@ export function createApp({
                     !data.text.trim() ||
                     (data.prompt !== undefined && typeof data.prompt !== 'string') ||
                     (data.autoRoute !== undefined && typeof data.autoRoute !== 'boolean') ||
-                    (data.planExecute !== undefined && typeof data.planExecute !== 'boolean')
+                    (data.planExecute !== undefined && typeof data.planExecute !== 'boolean') ||
+                    (data.multiAgent !== undefined && typeof data.multiAgent !== 'boolean')
                 )
                     throw new Error('消息参数无效');
                 if (busy.has(data.sessionId)) return json(409, { error: '该会话正在生成中' });

@@ -60,6 +60,7 @@ export async function startCLI() {
                     model: models[selected],
                     text,
                     planExecute: process.argv.includes('--plan'),
+                    multiAgent: process.argv.includes('--multi-agent'),
                 })) {
                     if (event.type === 'delta') process.stdout.write(event.text);
                     else if (event.type === 'plan')

@@ -1,5 +1,7 @@
 # 本地 Ollama Agent
 
+学习笔记：[当前 Agent 的运行图与状态数据](docs/AGENT_RUNTIME_GUIDE.md)，包含工具循环、上下文、Reflection、Plan & Execute、多助手协作，以及一轮请求中消息和事件的变化。
+
 基于 Node.js、TypeScript 的 Agent 学习项目，支持 XML 工具调用循环、流式对话、上下文筛选、模型路由和可切换助手。开发与静态构建需要 Node.js 24+。
 
 | 运行方式 | 模型与工具 | 数据存储 |
@@ -112,6 +114,14 @@ docs/               开发记录
 - 页面支持停止生成。停止、异常或断开时不保存未完成轮次，已执行的工具操作不会回滚。
 - 规则路由每轮只选一次模型，工具循环沿用它。模型参数量只是学习用代理，不等于实际能力或上下文容量。
 - `get_weather` 从 `src/tools/utils/weather.data.ts` 匹配 ID，只请求一次魅族天气接口，返回原始信息；参数为 `countyname`（兼容 `city`），同名地区可补充 `areaid`。应按返回日期回答，不能把旧数据说成今日天气。
+
+## 多助手协作（学习版）
+
+本地 Node 网页开启“多助手协作”，或运行 `npm run cli -- --multi-agent`。默认关闭，可与“先规划再执行”一起启用。主助手通过 `ask_weather_agent`、`ask_file_agent` 委派任务，子助手分别只有 `get_weather`、`read_file` 工具；主助手保留写入和编辑工具。
+
+核心在 `src/agent/sub-agents.ts`：子助手复用 `runAgent()`，每次创建独立消息列表，共用本轮模型、取消信号与日志。子助手不规划、不复查、不继续委派；返回的回答作为主助手的工具结果，主助手负责汇总与最终复查。前端显示委派工具状态，后台以 `[天气助手]` / `[文件助手]` 标识子步骤；子助手内部事件不逐条转发前端，也不单独保存会话。当前按需串行执行，没有并行调度或自动重规划。纯浏览器模式暂不支持。
+
+复查逻辑已移到 `src/agent/reflection.ts`，`agent.ts` 继续导出 `reviewAnswer` 兼容原调用；上下文构建复用同一函数。
 
 ## Plan & Execute（先规划再执行）
 

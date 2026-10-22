@@ -25,6 +25,8 @@
 
 ## 数据与接口
 
+“多助手协作”开关仅用于本地 Node 模式，默认关闭。`POST /api/chat` 的可选 `multiAgent` 布尔参数启用天气、文件子助手；仍通过现有 `tool` 事件展示委派状态，子助手内部步骤写入后台日志。可与 `planExecute` 一起使用，停止按钮会取消子助手模型请求。
+
 本地 Node 工作台可开启“先规划再执行”，实时查看各步骤进度。`POST /api/chat` 接受可选布尔参数 `planExecute`（默认 false），额外发送 `plan` SSE 事件：`status` 为 planning/executing/done/blocked，`steps` 包含 title、status 和可选 result。步骤完成不等于整轮保存成功，仍以顶层 `done` 为准。静态模式暂不支持；当前计划仅在本轮内存中管理，不支持重启恢复。
 
 Node 模式的 API Key 保存在服务端本机配置文件，不返回浏览器；静态模式的 Key 只保留在页面内存，发送给用户指定的模型服务。Node 服务只监听 `127.0.0.1`，文件工具具有进程的文件访问权限；静态文件工具仅访问浏览器虚拟文件。

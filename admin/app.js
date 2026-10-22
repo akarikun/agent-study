@@ -315,6 +315,7 @@ function renderChat() {
   select.disabled = busy || state.autoRoute || !state.models.length;
   $('#auto-route').checked = state.autoRoute === true;
   if ($('#plan-execute')) $('#plan-execute').disabled = busy || !!browserRuntime;
+  if ($('#multi-agent')) $('#multi-agent').disabled = busy || !!browserRuntime;
   $('#auto-route').disabled = busy;
   $('#routing-note').textContent = state.autoRoute
     ? '按任务规则自动选择本地模型；手动选择暂不生效。'
@@ -445,6 +446,7 @@ async function sendMessage(text) {
         modelId: state.selected,
         autoRoute: state.autoRoute === true,
         planExecute: !browserRuntime && $('#plan-execute')?.checked === true,
+        multiAgent: !browserRuntime && $('#multi-agent')?.checked === true,
       }),
     });
     if (!response.ok) throw new Error((await response.json()).error || '请求失败');
