@@ -499,7 +499,9 @@ async function sendMessage(text) {
             updateReviewWait();
             renderChat();
           }, 1000);
-        } else waitingText = '复查完成，正在输出';
+        } else
+          waitingText =
+            event.status === 'fallback' ? '复查未完成，正在返回初稿' : '复查完成，正在输出';
         renderChat();
       }
       if (event.type === 'tool') {

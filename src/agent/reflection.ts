@@ -10,7 +10,7 @@ export async function reviewAnswer({
     context,
     draft,
     signal,
-    timeoutMs = 60_000,
+    timeoutMs = 20_000,
     onProgress,
 }: {
     model: Model;

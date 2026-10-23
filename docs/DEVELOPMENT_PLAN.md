@@ -4,6 +4,14 @@
 
 ## 协作约定
 
+### 2026-10-23 代码整理
+
+按用户要求删除测试目录、测试命令及 jsdom 依赖；历史记录中的测试结果仅表示当时状态，当前项目不再包含对应文件。复查事件与降级流程拆到 `src/agent/review.ts`，主循环保留工具调度；图书工具统一连接管理。删除未实现强制路径约束的草稿 `check_file` 工具，当前仍没有文件工作目录边界。参数校验、库存约束、事务和取消处理保留。
+
+### 2026-10-23 图书工具实现
+
+按用户要求完善 `src/tools/library/index.ts`，新增 `store.ts` 存放 SQLite 业务逻辑，并接入 Node 工具注册表。支持入库、查书、查询未归还记录、借阅、归还；默认 `.data/library.sqlite`，自动初始化并记录结构版本。SQL 使用参数绑定，借还采用事务，借阅 requestId 去重、归还可重复执行。入库仍不去重；尚无身份认证和业务权限，不宣称完整 CRUD 或多用户系统。新增工具测试，当前31项测试及语法检查通过，未进行真实模型验证。下文旧状态为历史记录，以本条及代码为准。
+
 ### 2026-10-22 后续学习方向
 
 用户接下来希望学习上下文工程与 Harness。详细概念、当前实现边界和练习路线见 [运行文档第 13～16 节](AGENT_RUNTIME_GUIDE.md#13-下一阶段上下文工程)。建议先做文件工作目录约束，再学习写操作确认、可观测性、上下文预算与压缩、检查点恢复、限定命令验证，最终接入图书业务闭环。该路线是学习记录，不代表授权自动实现。
@@ -28,7 +36,7 @@
 - `src/tools/index.ts`：注册 `get_weather`、`read_file`、`write_file`、`edit_file`，顶层只放注册入口和工具实现。辅助文件 `types.ts`、`validation.ts`、`syntax-check.ts`、`weather.data.ts` 放在 `src/tools/utils/`。
 - `src/http/`：请求响应辅助、静态资源白名单、聊天 SSE 与超时；`src/config/model-store.ts`：模型增删改和密钥过滤。
 - `src/storage/sqlite.ts`：会话保存、读取、删除，以及助手模板、当前助手选择持久化。
-- `admin/`：后台页面；`tests/`：测试。
+- `admin/`：后台页面。
 - `admin/browser-runtime.js`：静态演示/浏览器直连，使用访客浏览器缓存和虚拟文件工具；静态共享代码由 `scripts/build-static.mjs` 生成。
 
 `npm start`、`npm run dev`、`npm run main` 均启动后台，访问 `http://127.0.0.1:3000`；`npm run cli` 启动终端。

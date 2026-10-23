@@ -21,7 +21,7 @@ function checkDirectory(directory) {
     }
 }
 
-for (const directory of ['src/', 'admin/', 'tests/', 'scripts/']) {
+for (const directory of ['src/', 'admin/', 'scripts/']) {
     checkDirectory(new URL(directory, root));
 }
-console.log('所有源码和测试文件语法检查通过');
+console.log('所有源码语法检查通过');

@@ -60,4 +60,4 @@ ollama serve
 
 ## 验证范围
 
-`npm test` 包含无外网演示、缓存恢复、工具失败回填、模拟公共 API 流、Key 不入缓存、停止与网络错误不误保存的测试。使用虚构 Key，不消费真实额度。最终公网 Origin 的 CORS、本地网络权限和真实账号访问需要在用户浏览器上验证。
+构建前运行 `npm run check` 和 `npm run format:check`。最终公网 Origin 的 CORS、本地网络权限和真实账号访问需要在用户浏览器上验证。

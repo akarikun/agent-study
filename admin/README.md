@@ -37,4 +37,4 @@ Node 模式的 API Key 保存在服务端本机配置文件，不返回浏览器
 
 `tool` 的 `running/done/error` 表示单次工具状态；顶层 `done` 表示整轮成功并保存，顶层 `error` 表示本轮失败。不要把工具失败与整轮失败混为一谈。Node 终端另有彩色步骤日志，静态版本没有 Node 终端日志。
 
-`npm run check` 检查语法，`npm test` 运行 SQLite 与模拟模型 HTTP 集成测试，不需要真实模型或 Key。
+`npm run check` 检查语法，`npm run format:check` 检查代码格式。

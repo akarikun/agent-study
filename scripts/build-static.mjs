@@ -23,7 +23,10 @@ const modules = [
 const code = modules
     .map((file) =>
         stripTypeScriptTypes(readFileSync(new URL(file, root), 'utf8'))
-            .replace(/^import \{ weatherData \} from ['"]\.\/utils\/weather\.data\.ts['"];?\s*$/m, '')
+            .replace(
+                /^import \{ weatherData \} from ['"]\.\/utils\/weather\.data\.ts['"];?\s*$/m,
+                '',
+            )
             .replace(/^export /gm, ''),
     )
     .join('\n');

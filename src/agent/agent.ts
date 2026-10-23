@@ -1,4 +1,4 @@
-import { reviewAnswer } from './reflection.ts';
+import { reviewFinalAnswer } from './review.ts';
 import { streamModelResponse } from './model-stream.ts';
 import { buildContext } from './context.ts';
 import { createSystemMessage, defaultPrompt } from './prompt.ts';
@@ -17,7 +17,7 @@ export { reviewAnswer } from './reflection.ts';
 export type AgentEvent =
     | { type: 'plan'; status: 'planning' | 'executing' | 'done' | 'blocked'; steps: PlanStep[] }
     | { type: 'delta'; text: string }
-    | { type: 'review'; status: 'running' | 'done'; timeoutMs?: number }
+    | { type: 'review'; status: 'running' | 'done' | 'fallback'; timeoutMs?: number }
     | { type: 'tool'; name: string; status: 'running' | 'done' | 'error'; error?: string };
 
 // messages 会被原地追加；调用方负责加载历史，并在整轮成功后保存。
@@ -30,7 +30,7 @@ export async function* runAgent({
     onStep,
     reflect = true,
     planExecute = false,
-    reviewTimeoutMs = Number(process.env.REVIEW_TIMEOUT_MS || 60_000),
+    reviewTimeoutMs = Number(process.env.REVIEW_TIMEOUT_MS || 20_000),
 }: {
     model: Model;
     messages: Message[];
@@ -151,50 +151,16 @@ export async function* runAgent({
             }
             let finalAnswer = answer;
             if (reflect) {
-                const reviewStartedAt = Date.now();
-                yield { type: 'review', status: 'running', timeoutMs: reviewTimeoutMs };
-                onStep?.({
-                    stage: 'review',
-                    round: round + 1,
-                    message: '初稿已生成，复查用户目标与工具证据',
-                    data: {
-                        timeoutMs: reviewTimeoutMs,
-                        draftCharacters: answer.length,
-                        contextCharacters: context.reduce(
-                            (sum, item) => sum + item.content.length,
-                            0,
-                        ),
-                    },
-                });
-                let lastProgressAt = 0;
-                finalAnswer = await reviewAnswer({
+                finalAnswer = yield* reviewFinalAnswer({
                     model,
                     prompt,
                     context,
-                    draft: answer,
+                    answer,
                     signal,
-                    timeoutMs: reviewTimeoutMs,
-                    onProgress: (progress) => {
-                        if (Date.now() - lastProgressAt < 5000) return;
-                        lastProgressAt = Date.now();
-                        onStep?.({
-                            stage: 'review',
-                            round: round + 1,
-                            message: '复查请求正在接收数据',
-                            data: progress,
-                        });
-                    },
-                });
-                onStep?.({
-                    stage: 'review',
+                    reviewTimeoutMs,
+                    onStep,
                     round: round + 1,
-                    message: '单次复查完成',
-                    data: {
-                        changed: finalAnswer !== answer,
-                        durationMs: Date.now() - reviewStartedAt,
-                    },
                 });
-                yield { type: 'review', status: 'done' };
             }
             // 只保存最终答案：不保存初稿和复查过程，保证页面与历史一致。
             messages.push({ role: 'assistant', content: finalAnswer });
