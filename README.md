@@ -1,3 +1,5 @@
+# 这是个人学习agent项目,代码有使用Codex润色
+
 # 本地 Ollama Agent
 
 学习笔记：[当前 Agent 的运行图与状态数据](docs/AGENT_RUNTIME_GUIDE.md)，包含工具循环、上下文、Reflection、Plan & Execute、多助手协作，以及一轮请求中消息和事件的变化。
@@ -47,6 +49,28 @@ npm run preview:static
 
 ## 文件与流程
 
+### Agent 实例与角色
+
+Node 网页 / CLI 使用 `src/agent/instance.ts` 的 `Agent` 类封装通用循环，`src/agent/registry.ts` 在应用外层统一创建实例：
+
+```ts
+const libraryAgent = new Agent({
+    name: '图书管理助手',
+    prompt: libraryPrompt,
+    tools: librarylocalTools,
+});
+
+for await (const event of libraryAgent.run({ model, messages, signal })) {
+    // 网页转成 SSE，终端打印事件。
+}
+```
+
+构造时不请求模型，也不打开图书数据库；模型可以构造时绑定，也可以在每轮 `run` 传入以支持模型切换。实例只保存角色配置，消息、取消信号、计划和运行日志按次独立。
+
+内置角色 `tools` 使用总工具表，`library` 只有图书工具，`file` 只有文件工具，`weather` 只有天气工具；页面选择助手或 CLI `/prompt library`、`/prompt file`、`/prompt weather` 切换。修改角色提示词不改变它的工具集合，自定义助手目前使用通用工具。新增角色时在 `registry.ts` 创建实例，在 `prompt.ts` 的 `builtinPrompts` 注册可选项；新增业务工具仍在对应工具目录维护。
+
+多助手模式只把该角色已有的天气或文件读取能力转换为子助手工具，不为图书角色添加文件或天气能力。子助手同样通过 `new Agent` 创建，每次委派单独传入消息。静态浏览器版本继续使用原浏览器运行器，尚未接入此角色工具隔离；其助手选择仍只是提示词切换。角色工具集合不是操作系统沙箱。
+
 ```text
 src/
   main.ts           统一启动入口，默认后台，--cli 启动终端
@@ -70,6 +94,8 @@ docs/               开发记录
 | `src/main.ts` | 统一启动入口，默认网页服务，--cli 切换终端 |
 | `src/cli.ts` | 终端交互、斜杠命令 |
 | `src/agent/agent.ts` | 网页和终端共用的工具调用循环 |
+| `src/agent/instance.ts` | Agent 类，绑定角色配置，提供 run 入口 |
+| `src/agent/registry.ts` | 外层创建角色实例，按助手 ID 选择 |
 | `src/agent/session.ts` | 历史加载、助手选择、整轮保存及日志接入 |
 | `src/agent/prompt.ts` | 内置助手模板与公共工具协议 |
 | `src/agent/context.ts` | 保留最近 3 轮完整历史及当前轮，不删除数据库历史 |

@@ -1,5 +1,20 @@
 # 当前 Agent 的运行图与状态数据
 
+## 2026-10-23 更新：Agent 实例入口
+
+Node 主链路现在为 `session.ts → registry.ts 选择 Agent → instance.ts 的 agent.run() → agent.ts 的 runAgent()`。下文关于主循环、消息及事件的说明仍可对照阅读；旧示例中的通用主助手拥有总工具表，专属角色则使用以下范围：
+
+| 实例 | 工具 |
+|---|---|
+| `agents.tools` | 总工具表，包含文件、天气和图书 |
+| `agents.library` | 查书、入库、借阅、借阅查询、归还 |
+| `agents.file` | 读取、写入、局部修改文件 |
+| `agents.weather` | 天气查询 |
+
+`registry.ts` 通过 `new Agent({ name, prompt, tools })` 创建实例；`Agent.run({ model, messages, signal, onStep, planExecute, multiAgent })` 接收本次运行状态。实例不保存公共消息历史，构造不执行模型请求。网页和 CLI 沿用原助手选择入口，自定义助手暂使用通用工具集合。多助手只委派该角色原有的能力，图书助手不会因此获得文件工具。
+
+复查事件流程已拆到 `review.ts`；默认等待20秒，失败时返回带“未经复查”提示的初稿，取消仍终止本轮。下文旧的60秒复查及失败不保存描述，以此更新和当前代码为准。静态浏览器运行器未迁移到 Agent 类。
+
 以 2026-10-22 的本地 Node 实现为准，按代码解释目前学到的工具循环、上下文、Reflection、Plan & Execute、多 Agent 协作。示例中的天气全部是假设的工具返回值，不是实时查询。
 
 建议先看第 1、3、8 节，再对照代码看其他部分。图中的状态名称用于理解控制流程；项目没有定义一个统一的 `AgentState` 类，也没有使用状态图框架。

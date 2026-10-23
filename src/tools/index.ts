@@ -5,11 +5,17 @@ import { weatherTool } from './weather.ts';
 import { librarylocalTools } from './library/index.ts';
 import type { Tool } from './utils/types.ts';
 
-// 新增工具：在独立文件实现后，在此注册；Agent 和页面共用这份清单。
-export const localTools: Record<string, Tool> = {
-    ...librarylocalTools,
-    get_weather: weatherTool,
+export const fileTools: Record<string, Tool> = {
     read_file: readFileTool,
     write_file: writeFileTool,
     edit_file: editFileTool,
+};
+
+export const weatherTools: Record<string, Tool> = { get_weather: weatherTool };
+
+// 总工具表用于通用助手和页面清单，专属助手使用各自的工具集合。
+export const localTools: Record<string, Tool> = {
+    ...fileTools,
+    ...weatherTools,
+    ...librarylocalTools,
 };
