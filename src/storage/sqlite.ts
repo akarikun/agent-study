@@ -21,7 +21,7 @@ export function openChatStore(path = fileURLToPath(projectPath('.data/chat.sqlit
     // scope_id：具体项目标识，用户级记忆可约定为空字符串。
     // key/value：记忆名称和内容；updated_at：更新时间（调用方写入毫秒时间戳）。
     // 联合主键：同一用户、范围、项目下，同名记忆只能保存一条。
-    // 此处仅建表，尚未实现保存或读取记忆的方法。
+    // 保存和读取接口见下方 saveMemory、loadMemories。
     db.exec(`
     CREATE TABLE IF NOT EXISTS memories (
         owner_id TEXT NOT NULL,
@@ -115,6 +115,23 @@ export function openChatStore(path = fileURLToPath(projectPath('.data/chat.sqlit
     };
 
     return {
+        loadMemories(ownerId: string, projectId: string) {
+            // 仅取当前用户的通用偏好和当前项目约定，不跨用户或项目读取。
+            // 最近更新优先，最多20条；这里尚未按问题相关性检索。
+            return db
+                .prepare(
+                    `
+                SELECT scope, key, value FROM memories
+                WHERE owner_id = ? AND (
+                    (scope = 'user' AND scope_id = '')
+                    OR (scope = 'project' AND scope_id = ?)
+                )
+                ORDER BY updated_at DESC, scope, key
+                LIMIT 20
+            `,
+                )
+                .all(ownerId, projectId);
+        },
         saveMemory({
             ownerId,
             scope,
