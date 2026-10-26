@@ -2,9 +2,17 @@ import { Agent } from './instance.ts';
 import { defaultPrompt, libraryPrompt, filePrompt, weatherPrompt } from './prompt.ts';
 import { localTools, fileTools, weatherTools } from '../tools/index.ts';
 import { librarylocalTools } from '../tools/library/index.ts';
+import { knowledgeTools } from '../tools/knowledge/index.ts';
+import { knowledgePrompt } from './prompt.ts';
 
 // 应用外层统一创建角色。模型每轮由网页/CLI选择，也可以在构造时固定。
 export const agents = {
+    knowledge: new Agent({
+        name: '知识问答助手',
+        prompt: knowledgePrompt,
+        tools: knowledgeTools,
+        reflect: false,
+    }),
     tools: new Agent({ name: '工具助手', prompt: defaultPrompt, tools: localTools }),
     library: new Agent({ name: '图书管理助手', prompt: libraryPrompt, tools: librarylocalTools }),
     file: new Agent({ name: '文件助手', prompt: filePrompt, tools: fileTools }),

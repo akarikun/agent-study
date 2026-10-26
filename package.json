@@ -9,6 +9,7 @@
     "dev": "node src/main.ts",
     "cli": "node src/main.ts --cli",
     "check": "node scripts/check.mjs",
+    "rag:index": "node scripts/index-knowledge.mjs",
     "start": "node src/main.ts",
     "build:static": "node scripts/build-static.mjs",
     "preview:static": "node scripts/serve-static.mjs",
